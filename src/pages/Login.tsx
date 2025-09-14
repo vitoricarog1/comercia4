@@ -69,15 +69,9 @@ export const Login: React.FC = () => {
         dispatch({ type: 'SET_USER', payload: response.data.user });
         showSuccess('Login realizado com sucesso!', `Bem-vindo, ${response.data.user.name}`);
         
-        // Navegar baseado no tipo de usuário retornado pela API
-        const userRole = response.data.user.role || 'user';
-        if (userRole === 'barber' || userRole === 'barbearia') {
-          navigate('/barbearia');
-        } else if (userRole === 'admin') {
-          navigate('/admin');
-        } else {
-          navigate('/dashboard');
-        }
+        // Usar redirecionamento retornado pela API
+        const redirectTo = response.data.user.redirect_to || '/dashboard';
+        navigate(redirectTo);
       } else {
         // Rastrear erro de login
         trackError('login_failed', response.error || 'Invalid credentials', {

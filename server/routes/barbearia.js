@@ -1,7 +1,8 @@
 import express from 'express';
 import { authMiddleware } from '../middleware/auth.js';
 import { executeMainQuery } from '../config/database.js';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import Barbearia from '../models/Barbearia.js';
+import GeminiService from '../services/geminiService.js';
 
 const router = express.Router();
 
@@ -24,57 +25,111 @@ router.use(verificarUsuarioBarbearia);
 // GET /api/barbearia/agendamentos - Listar agendamentos
 router.get('/agendamentos', async (req, res) => {
   try {
-    const { data } = req.query;
-    const dataFiltro = data || new Date().toISOString().split('T')[0];
+    const { data, periodo } = req.query;
+    const userId = req.user.id;
     
-    // Buscar agendamentos da data especificada ou do dia atual
-    const query = `
-      SELECT 
-        id,
-        cliente,
-        telefone,
-        email,
-        data,
-        horario,
-        servico,
-        valor,
-        pago,
-        metodo_pagamento,
-        observacoes,
-        status,
-        created_at,
-        updated_at
-      FROM agendamentos 
-      WHERE user_id = ? AND DATE(data) = ?
-      ORDER BY horario ASC
-    `;
+    let agendamentos;
     
-    const agendamentos = await executeMainQuery(query, [req.user.id, dataFiltro]);
-    
-    // Formatar dados para o frontend
-    const agendamentosFormatados = agendamentos.map(agendamento => ({
-      id: agendamento.id,
-      cliente: agendamento.cliente,
-      telefone: agendamento.telefone,
-      email: agendamento.email,
-      servico: agendamento.servico,
-      data: agendamento.data,
-      horario: agendamento.horario,
-      valor: parseFloat(agendamento.valor || 0),
-      pago: Boolean(agendamento.pago),
-      metodo_pagamento: agendamento.metodo_pagamento,
-      observacoes: agendamento.observacoes,
-      status: agendamento.status,
-      created_at: agendamento.created_at,
-      updated_at: agendamento.updated_at
-    }));
+    if (periodo === 'semana') {
+      const hoje = new Date();
+      const inicioSemana = new Date(hoje.setDate(hoje.getDate() - hoje.getDay()));
+      const fimSemana = new Date(hoje.setDate(hoje.getDate() - hoje.getDay() + 6));
+      
+      agendamentos = await Barbearia.findByPeriod(
+        userId,
+        inicioSemana.toISOString().split('T')[0],
+        fimSemana.toISOString().split('T')[0]
+      );
+    } else if (periodo === 'mes') {
+      const hoje = new Date();
+      const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+      const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
+      
+      agendamentos = await Barbearia.findByPeriod(
+        userId,
+        inicioMes.toISOString().split('T')[0],
+        fimMes.toISOString().split('T')[0]
+      );
+    } else {
+      const dataFiltro = data || new Date().toISOString().split('T')[0];
+      agendamentos = await Barbearia.findByDate(userId, dataFiltro);
+    }
     
     res.json({
       success: true,
-      data: agendamentosFormatados
+      data: agendamentos
     });
   } catch (error) {
     console.error('Erro ao buscar agendamentos:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor'
+    });
+  }
+});
+
+// GET /api/barbearia/stats - Estatísticas da barbearia
+router.get('/stats', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const stats = await Barbearia.getStats(userId);
+    
+    res.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    console.error('Erro ao buscar estatísticas:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor'
+    });
+  }
+});
+
+// GET /api/barbearia/horarios-disponiveis - Buscar horários disponíveis
+router.get('/horarios-disponiveis', async (req, res) => {
+  try {
+    const { data } = req.query;
+    const userId = req.user.id;
+    
+    if (!data) {
+      return res.status(400).json({
+        success: false,
+        error: 'Data é obrigatória'
+      });
+    }
+    
+    // Buscar configuração
+    const configQuery = `
+      SELECT model_config FROM agents 
+      WHERE user_id = ? AND name LIKE '%barbearia%'
+      LIMIT 1
+    `;
+    
+    const configResult = await executeMainQuery(configQuery, [userId]);
+    let configuracao = {
+      horarioFuncionamento: { inicio: '08:00', fim: '18:00' },
+      diasFolga: []
+    };
+
+    if (configResult.length > 0 && configResult[0].model_config) {
+      try {
+        const modelConfig = JSON.parse(configResult[0].model_config);
+        configuracao = { ...configuracao, ...modelConfig };
+      } catch (e) {
+        console.error('Erro ao parsear configuração:', e);
+      }
+    }
+    
+    const horariosDisponiveis = await Barbearia.getAvailableSlots(userId, data, configuracao);
+    
+    res.json({
+      success: true,
+      data: horariosDisponiveis
+    });
+  } catch (error) {
+    console.error('Erro ao buscar horários disponíveis:', error);
     res.status(500).json({
       success: false,
       error: 'Erro interno do servidor'
@@ -664,131 +719,225 @@ router.post('/conversas/nova', async (req, res) => {
 // POST /api/barbearia/chat/enviar - Enviar mensagem e processar com Gemini
 router.post('/chat/enviar', async (req, res) => {
   try {
-    const { conversaId, mensagem } = req.body;
-    const agentId = 7; // ID do agente da barbearia
+    const { mensagem, telefone } = req.body;
+    const userId = req.user.id;
     
-    // Verificar se a conversa pertence ao agente
-    let query = `
-      SELECT id, customer_phone FROM conversations 
-      WHERE id = ? AND agent_id = ?
-      LIMIT 1
-    `;
-    
-    const conversa = await executeMainQuery(query, [conversaId, agentId]);
-    
-    if (conversa.length === 0) {
-      return res.status(404).json({ success: false, message: 'Conversa não encontrada' });
+    if (!mensagem || !telefone) {
+      return res.status(400).json({
+        success: false,
+        error: 'Mensagem e telefone são obrigatórios'
+      });
     }
     
-    // Salvar mensagem enviada
-    query = `
-      INSERT INTO messages (conversation_id, content, sender_type, created_at)
-      VALUES (?, ?, 'assistant', NOW())
-    `;
+    // Processar com Gemini
+    const response = await GeminiService.processAgendamento(mensagem, telefone, userId);
     
-    await executeMainQuery(query, [conversaId, mensagem]);
+    res.json({
+      success: true,
+      data: response
+    });
+  } catch (error) {
+    console.error('Erro ao processar mensagem:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor'
+    });
+  }
+});
+
+// POST /api/barbearia/agendamentos - Criar agendamento manual
+router.post('/agendamentos', async (req, res) => {
+  try {
+    const agendamentoData = req.body;
+    const userId = req.user.id;
     
-    // Processar com Gemini para detectar agendamentos
-    const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    // Verificar disponibilidade
+    const disponivel = await Barbearia.checkAvailability(
+      userId, 
+      agendamentoData.data, 
+      agendamentoData.horario
+    );
     
-    const prompt = `
-      Você é um assistente de uma barbearia. Analise a seguinte mensagem e determine se é uma solicitação de agendamento:
-      
-      Mensagem: "${mensagem}"
-      
-      Se for um agendamento, extraia as seguintes informações e responda APENAS em formato JSON:
-      {
-        "eh_agendamento": true,
-        "cliente": "nome do cliente",
-        "telefone": "${conversa[0].customer_phone}",
-        "servico": "cabelo" ou "barba" ou "cabelo_barba",
-        "data": "YYYY-MM-DD",
-        "horario": "HH:MM",
-        "valor": numero,
-        "resposta": "mensagem de confirmação amigável"
-      }
-      
-      Se NÃO for um agendamento, responda:
-      {
-        "eh_agendamento": false,
-        "resposta": "resposta amigável e útil"
-      }
-      
-      Horários disponíveis: 08:00 às 18:00
-      Preços: Cabelo R$25, Barba R$15, Cabelo+Barba R$35
-    `;
-    
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-    
-    let geminiResponse;
-    try {
-      geminiResponse = JSON.parse(text);
-    } catch (e) {
-      geminiResponse = {
-        eh_agendamento: false,
-        resposta: "Desculpe, não consegui processar sua mensagem. Pode repetir?"
-      };
+    if (!disponivel) {
+      return res.status(409).json({
+        success: false,
+        error: 'Horário não disponível'
+      });
     }
     
-    let agendamentoCriado = null;
+    const agendamento = await Barbearia.createAgendamento({
+      ...agendamentoData,
+      user_id: userId,
+      criado_por_ia: false
+    });
     
-    // Se for um agendamento, salvar no banco
-    if (geminiResponse.eh_agendamento) {
-      try {
-        query = `
-          INSERT INTO agendamentos (
-            user_id, cliente, telefone, email, servico, data, horario, 
-            valor, pago, metodo_pagamento, status, created_at, updated_at
-          ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, 0, 'pendente', 'confirmado', NOW(), NOW())
-        `;
-        
-        const agendamentoResult = await executeMainQuery(query, [
-          1, // user_id fixo para barbearia
-          geminiResponse.cliente,
-          geminiResponse.telefone,
-          geminiResponse.servico,
-          geminiResponse.data,
-          geminiResponse.horario,
-          geminiResponse.valor
-        ]);
-        
-        agendamentoCriado = {
-          id: agendamentoResult.insertId,
-          ...geminiResponse
-        };
-      } catch (error) {
-        console.error('Erro ao criar agendamento:', error);
-        geminiResponse.resposta = "Agendamento processado, mas houve um erro ao salvar. Entre em contato conosco.";
-      }
+    res.status(201).json({
+      success: true,
+      data: agendamento
+    });
+  } catch (error) {
+    console.error('Erro ao criar agendamento:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor'
+    });
+  }
+});
+
+// PUT /api/barbearia/agendamentos/:id - Atualizar agendamento
+router.put('/agendamentos/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+    const userId = req.user.id;
+    
+    const agendamento = await Barbearia.update(id, userId, updates);
+    
+    if (!agendamento) {
+      return res.status(404).json({
+        success: false,
+        error: 'Agendamento não encontrado'
+      });
     }
     
-    // Salvar resposta do Gemini
-    if (geminiResponse.resposta) {
-      query = `
-        INSERT INTO messages (conversation_id, content, sender_type, created_at)
-        VALUES (?, ?, 'user', NOW())
-      `;
-      
-      await executeMainQuery(query, [conversaId, geminiResponse.resposta]);
+    res.json({
+      success: true,
+      data: agendamento
+    });
+  } catch (error) {
+    console.error('Erro ao atualizar agendamento:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor'
+    });
+  }
+});
+
+// DELETE /api/barbearia/agendamentos/:id - Deletar agendamento
+router.delete('/agendamentos/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    
+    const success = await Barbearia.delete(id, userId);
+    
+    if (!success) {
+      return res.status(404).json({
+        success: false,
+        error: 'Agendamento não encontrado'
+      });
     }
     
-    // Atualizar timestamp da conversa
-    query = `UPDATE conversations SET updated_at = NOW() WHERE id = ?`;
-    await executeMainQuery(query, [conversaId]);
+    res.json({
+      success: true,
+      message: 'Agendamento excluído com sucesso'
+    });
+  } catch (error) {
+    console.error('Erro ao excluir agendamento:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor'
+    });
+  }
+});
+
+// POST /api/barbearia/chat/ia - Chat direto com IA
+router.post('/chat/ia', async (req, res) => {
+  try {
+    const { mensagem, telefone } = req.body;
+    const userId = req.user.id;
+    
+    if (!mensagem) {
+      return res.status(400).json({
+        success: false,
+        error: 'Mensagem é obrigatória'
+      });
+    }
+    
+    // Usar telefone padrão se não fornecido (para chat web)
+    const telefoneChat = telefone || 'chat-web-' + Date.now();
+    
+    // Processar com Gemini
+    const response = await GeminiService.processAgendamento(mensagem, telefoneChat, userId);
+    
+    res.json({
+      success: true,
+      data: response
+    });
+  } catch (error) {
+    console.error('Erro no chat IA:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor'
+    });
+  }
+});
+
+// GET /api/barbearia/conhecimento - Buscar na base de conhecimento
+router.get('/conhecimento', async (req, res) => {
+  try {
+    const { query } = req.query;
+    const userId = req.user.id;
+    
+    if (!query) {
+      return res.json({
+        success: true,
+        data: []
+      });
+    }
+    
+    const results = await GeminiService.searchKnowledge(query, userId);
     
     res.json({
       success: true,
       data: {
-        resposta: geminiResponse.resposta,
-        agendamento: agendamentoCriado
+        results
       }
     });
   } catch (error) {
-    console.error('Erro ao processar mensagem:', error);
-    res.status(500).json({ success: false, message: 'Erro interno do servidor' });
+    console.error('Erro ao buscar conhecimento:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor'
+    });
+  }
+});
+
+// POST /api/barbearia/conhecimento - Adicionar conhecimento
+router.post('/conhecimento', async (req, res) => {
+  try {
+    const { title, content, category } = req.body;
+    const userId = req.user.id;
+    
+    if (!title || !content) {
+      return res.status(400).json({
+        success: false,
+        error: 'Título e conteúdo são obrigatórios'
+      });
+    }
+    
+    const query = `
+      INSERT INTO knowledge_base (title, content, category, is_active)
+      VALUES (?, ?, ?, true)
+    `;
+    
+    const result = await executeMainQuery(query, [title, content, category || 'geral']);
+    
+    res.json({
+      success: true,
+      data: {
+        id: result.insertId,
+        title,
+        content,
+        category
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao adicionar conhecimento:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor'
+    });
   }
 });
 

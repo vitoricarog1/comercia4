@@ -167,7 +167,18 @@ const chatController = {
         });
       }
 
-      const results = await AIService.searchKnowledge(userId, query, parseInt(limit));
+      // Buscar na base de conhecimento usando FULLTEXT search
+      const results = await executeUserQuery(userId, `
+        SELECT id, title, content, category, tags
+        FROM knowledge_base 
+        WHERE is_active = true 
+        AND (MATCH(title, content) AGAINST(? IN NATURAL LANGUAGE MODE)
+             OR title LIKE ? OR content LIKE ?)
+        ORDER BY 
+          MATCH(title, content) AGAINST(? IN NATURAL LANGUAGE MODE) DESC,
+          created_at DESC
+        LIMIT ?
+      `, [query, `%${query}%`, `%${query}%`, query, parseInt(limit)]);
 
       res.json({
         success: true,
@@ -195,7 +206,7 @@ const chatController = {
         });
       }
 
-      const [result] = await executeUserQuery(userId, `
+      const result = await executeMainQuery(`
         INSERT INTO knowledge_base (title, content, category, tags, is_active)
         VALUES (?, ?, ?, ?, true)
       `, [title, content, category || 'geral', JSON.stringify(tags || [])]);

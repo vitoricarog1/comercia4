@@ -184,12 +184,20 @@ const authController = {
       // Remove password from response
       const { password: _, ...userWithoutPassword } = user;
 
+      // Determinar redirecionamento baseado no role
+      let redirectTo = '/dashboard';
+      if (user.role === 'barbearia') {
+        redirectTo = '/barbearia';
+      } else if (user.role === 'admin') {
+        redirectTo = '/admin';
+      }
       res.json({
         success: true,
         message: 'Login realizado com sucesso',
         user: {
           ...userWithoutPassword,
-          two_factor_enabled: user.two_factor_enabled
+          two_factor_enabled: user.two_factor_enabled,
+          redirect_to: redirectTo
         },
         token
       });

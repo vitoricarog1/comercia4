@@ -1,4 +1,6 @@
 import axios from 'axios';
+import GeminiService from './geminiService.js';
+import { executeMainQuery } from '../config/database.js';
 
 class WhatsAppService {
   constructor() {
@@ -91,6 +93,61 @@ class WhatsAppService {
     } catch (error) {
       console.error('Erro ao processar webhook:', error);
       return [];
+    }
+  }
+
+  // Processar mensagem recebida
+  async processIncomingMessage(message, userId) {
+    try {
+      const { from, text, timestamp } = message;
+      
+      // Buscar ou criar conversa
+      let conversationQuery = `
+        SELECT id FROM conversations 
+        WHERE customer_phone = ? AND status = 'active' AND user_id = ?
+        ORDER BY created_at DESC LIMIT 1
+      `;
+      
+      let conversations = await executeMainQuery(conversationQuery, [from, userId]);
+      let conversationId;
+      
+      if (conversations.length === 0) {
+        // Criar nova conversa
+        const createConvQuery = `
+          INSERT INTO conversations (user_id, customer_phone, channel_type, status, start_time)
+          VALUES (?, ?, 'whatsapp', 'active', NOW())
+        `;
+        
+        const result = await executeMainQuery(createConvQuery, [userId, from]);
+        conversationId = result.insertId;
+      } else {
+        conversationId = conversations[0].id;
+      }
+      
+      // Salvar mensagem recebida
+      await executeMainQuery(`
+        INSERT INTO messages (conversation_id, content, sender, message_type, timestamp)
+        VALUES (?, ?, 'user', 'text', FROM_UNIXTIME(?))
+      `, [conversationId, text, timestamp]);
+      
+      // Processar com Gemini
+      const geminiResponse = await GeminiService.processAgendamento(text, from, userId);
+      
+      // Enviar resposta
+      if (geminiResponse.resposta) {
+        await this.sendMessage(from, geminiResponse.resposta);
+        
+        // Salvar resposta
+        await executeMainQuery(`
+          INSERT INTO messages (conversation_id, content, sender, message_type, timestamp)
+          VALUES (?, ?, 'agent', 'text', NOW())
+        `, [conversationId, geminiResponse.resposta]);
+      }
+      
+      return geminiResponse;
+    } catch (error) {
+      console.error('Erro ao processar mensagem:', error);
+      throw error;
     }
   }
 

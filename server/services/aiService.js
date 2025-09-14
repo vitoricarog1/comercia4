@@ -129,9 +129,9 @@ class AIService {
   }
 
   // RAG - Buscar conhecimento relevante
-  async searchKnowledge(userId, query, limit = 5) {
+  async searchKnowledge(query, limit = 5) {
     try {
-      const results = await executeUserQuery(userId, `
+      const results = await executeMainQuery(`
         SELECT id, title, content, category, tags
         FROM knowledge_base 
         WHERE is_active = true 
@@ -181,7 +181,7 @@ class AIService {
   async generateWithRAG(userId, provider, model, message, agent, temperature, maxTokens) {
     try {
       // Buscar conhecimento relevante
-      const knowledge = await this.searchKnowledge(userId, message);
+      const knowledge = await this.searchKnowledge(message);
       
       // Construir prompt completo com configurações do agente
       let enhancedPrompt = this.buildAgentPrompt(agent, agent.system_prompt);

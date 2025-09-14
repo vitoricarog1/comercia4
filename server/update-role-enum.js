@@ -49,6 +49,20 @@ async function updateRoleEnum() {
     
     console.log(`Linhas afetadas: ${updateResult.affectedRows}`);
     
+    // Se não encontrou o usuário, criar
+    if (updateResult.affectedRows === 0) {
+      console.log('🔄 Criando usuário da barbearia...');
+      const bcrypt = (await import('bcryptjs')).default;
+      const barbeariaPassword = await bcrypt.hash('barbearia123', 12);
+      
+      await connection.execute(`
+        INSERT INTO users (name, email, password, role, plan, is_active, email_verified)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, ['Barbearia Login', 'login@barbearia.com', barbeariaPassword, 'barbearia', 'premium', true, true]);
+      
+      console.log('✅ Usuário da barbearia criado');
+    }
+    
     // Verificar resultado final
     console.log('\n📋 VERIFICAÇÃO FINAL:');
     const [finalUsers] = await connection.execute(

@@ -9,7 +9,10 @@ import {
   CheckCircleIcon,
   XCircleIcon,
   ExclamationTriangleIcon,
-  PlusIcon
+  PlusIcon,
+  ChatBubbleLeftRightIcon,
+  PaperAirplaneIcon,
+  ChartBarIcon
 } from '@heroicons/react/24/outline';
 import { useApp } from '../contexts/AppContext';
 import { useNotification } from '../contexts/NotificationContext';
@@ -43,10 +46,26 @@ interface ConfiguracaoBarbearia {
   diasFolga: string[];
 }
 
+interface BarbeariaStats {
+  total: number;
+  confirmados: number;
+  hoje: number;
+  receita: number;
+  dailyBookings: Array<{ date: string; count: number }>;
+}
+
+interface ChatMessage {
+  id: string;
+  content: string;
+  sender: 'user' | 'agent';
+  timestamp: string;
+}
+
 export const Barbearia: React.FC = () => {
-  const { user } = useApp();
+  const { state } = useApp();
   const { showSuccess, showError } = useNotification();
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
+  const [stats, setStats] = useState<BarbeariaStats | null>(null);
   const [configuracao, setConfiguracao] = useState<ConfiguracaoBarbearia>({
     whatsappApiKey: '',
     geminiApiKey: '',
@@ -58,94 +77,54 @@ export const Barbearia: React.FC = () => {
     diasFolga: []
   });
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'agendamentos' | 'chat' | 'configuracao' | 'folgas'>('agendamentos');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'agendamentos' | 'chat' | 'configuracao' | 'folgas'>('dashboard');
   const [novaFolga, setNovaFolga] = useState('');
-  const [agentId] = useState(8); // ID do agente Gemini da barbearia
   const [modalAberto, setModalAberto] = useState(false);
   const [agendamentoSelecionado, setAgendamentoSelecionado] = useState<Agendamento | null>(null);
   
-  // Estados do Chat
-  const [mensagens, setMensagens] = useState<any[]>([]);
+  // Estados do Chat IA
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [novaMensagem, setNovaMensagem] = useState('');
-  const [conversas, setConversas] = useState<any[]>([]);
-  const [conversaAtiva, setConversaAtiva] = useState<string | null>(null);
   const [carregandoChat, setCarregandoChat] = useState(false);
+  const [telefoneChat, setTelefoneChat] = useState('11999999999');
   
-  // Estados para modal de WhatsApp
-  const [modalWhatsApp, setModalWhatsApp] = useState(false);
-  const [numeroWhatsApp, setNumeroWhatsApp] = useState('');
+  // Estados para novo agendamento
+  const [modalNovoAgendamento, setModalNovoAgendamento] = useState(false);
+  const [novoAgendamento, setNovoAgendamento] = useState({
+    cliente: '',
+    telefone: '',
+    email: '',
+    data: '',
+    horario: '',
+    servico: 'cabelo',
+    observacoes: ''
+  });
 
   useEffect(() => {
-    // Autenticar automaticamente como usuário da barbearia
-    autenticarBarbearia();
+    carregarDados();
   }, []);
-
-  const autenticarBarbearia = async () => {
-    try {
-      // Verificar se já está autenticado
-      if (apiService.isAuthenticated()) {
-        await carregarDados();
-        return;
-      }
-
-      // Verificar se o usuário atual tem permissão de barbearia
-      if (!user || (user.role !== 'barber' && user.role !== 'barbearia' && user.role !== 'admin')) {
-        showError('Acesso negado', 'Você não tem permissão para acessar o sistema da barbearia');
-        return;
-      }
-
-      await carregarDados();
-    } catch (error) {
-      console.error('Erro na autenticação:', error);
-      showError('Erro ao conectar com o sistema da barbearia');
-    }
-  };
 
   const carregarDados = async () => {
     try {
       setLoading(true);
       
-      // Carregar conversas do agente da barbearia
-       const conversasRes = await apiService.get(`/barbearia/conversations?agent_id=${agentId}`);
-       
-       // Processar conversas para extrair agendamentos
-       if (conversasRes.success) {
-         const processedAppointments = conversasRes.data
-           .filter((conv: any) => conv.status === 'active')
-           .map((conv: any) => ({
-             id: conv.id,
-             cliente: conv.title || 'Cliente',
-             telefone: conv.phone_number || '',
-             servico: 'Corte de Cabelo',
-             data: new Date(conv.created_at).toLocaleDateString('pt-BR'),
-             horario: new Date(conv.created_at).toLocaleTimeString('pt-BR', { 
-               hour: '2-digit', 
-               minute: '2-digit' 
-             }),
-             status: 'confirmado' as const
-           }));
-         
-         setAgendamentos(processedAppointments);
-       }
-       
-       // Carregar configurações do agente
-       const agentRes = await apiService.get(`/barbearia/agent/${agentId}`);
-       if (agentRes.success) {
-         const agent = agentRes.data;
-         
-         if (agent.whatsapp_config && agent.model_config) {
-           const whatsappConfig = JSON.parse(agent.whatsapp_config);
-           const modelConfig = JSON.parse(agent.model_config);
-           
-           setConfiguracao({
-             geminiApiKey: process.env.REACT_APP_GEMINI_API_KEY || '',
-             whatsappApiKey: whatsappConfig.apiKey || '',
-             numeroWhatsapp: whatsappConfig.phoneNumber || '',
-             horarioFuncionamento: modelConfig.horarioFuncionamento || { inicio: '08:00', fim: '18:00' },
-             diasFolga: modelConfig.diasFolga || []
-           });
-         }
-       }
+      // Carregar agendamentos de hoje
+      const agendamentosRes = await apiService.get('/barbearia/agendamentos');
+      if (agendamentosRes.success) {
+        setAgendamentos(agendamentosRes.data);
+      }
+      
+      // Carregar estatísticas
+      const statsRes = await apiService.get('/barbearia/stats');
+      if (statsRes.success) {
+        setStats(statsRes.data);
+      }
+      
+      // Carregar configurações
+      const configRes = await apiService.get('/barbearia/configuracao');
+      if (configRes.success) {
+        setConfiguracao(configRes.data);
+      }
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
       showError('Erro', 'Não foi possível carregar os dados da barbearia');
@@ -156,22 +135,7 @@ export const Barbearia: React.FC = () => {
 
   const salvarConfiguracao = async () => {
     try {
-      // Atualizar configurações do agente
-      const whatsappConfig = {
-        apiKey: configuracao.whatsappApiKey,
-        phoneNumber: configuracao.numeroWhatsapp
-      };
-      
-      const modelConfig = {
-        horarioFuncionamento: configuracao.horarioFuncionamento,
-        diasFolga: configuracao.diasFolga,
-        intervalos: 30
-      };
-      
-      const response = await apiService.put(`/barbearia/agent/${agentId}`, {
-         whatsapp_config: JSON.stringify(whatsappConfig),
-         model_config: JSON.stringify(modelConfig)
-       });
+      const response = await apiService.post('/barbearia/configuracao', configuracao);
       
       if (response.success) {
         showSuccess('Sucesso', 'Configurações salvas com sucesso!');
@@ -181,6 +145,32 @@ export const Barbearia: React.FC = () => {
     } catch (error) {
       console.error('Erro ao salvar configuração:', error);
       showError('Erro', 'Não foi possível salvar as configurações');
+    }
+  };
+
+  const criarAgendamento = async () => {
+    try {
+      const response = await apiService.post('/barbearia/agendamentos', novoAgendamento);
+      
+      if (response.success) {
+        setModalNovoAgendamento(false);
+        setNovoAgendamento({
+          cliente: '',
+          telefone: '',
+          email: '',
+          data: '',
+          horario: '',
+          servico: 'cabelo',
+          observacoes: ''
+        });
+        await carregarDados();
+        showSuccess('Agendamento criado com sucesso!');
+      } else {
+        showError('Erro', response.error || 'Erro ao criar agendamento');
+      }
+    } catch (error) {
+      console.error('Erro ao criar agendamento:', error);
+      showError('Erro', 'Não foi possível criar o agendamento');
     }
   };
 
@@ -211,24 +201,67 @@ export const Barbearia: React.FC = () => {
     setAgendamentoSelecionado(null);
   };
 
-  const atualizarStatusAgendamento = async (agendamentoId: string, novoStatus: string) => {
+  const atualizarStatusAgendamento = async (agendamentoId: string, updates: any) => {
     try {
-      await apiService.put(`/barbearia/agendamento/${agendamentoId}`, {
-        status: novoStatus
-      });
+      const response = await apiService.put(`/barbearia/agendamentos/${agendamentoId}`, updates);
       
-      // Atualizar a lista local
-      setAgendamentos(prev => prev.map(ag => 
-        ag.id === agendamentoId ? { ...ag, status: novoStatus as any } : ag
-      ));
-      
-      showSuccess('Status atualizado com sucesso!');
-      
-      // Recarregar dados para garantir sincronização
-      carregarDados();
+      if (response.success) {
+        await carregarDados();
+        showSuccess('Agendamento atualizado com sucesso!');
+      } else {
+        showError('Erro', response.error || 'Erro ao atualizar agendamento');
+      }
     } catch (error) {
-      console.error('Erro ao atualizar status:', error);
-      showError('Erro ao atualizar status do agendamento');
+      console.error('Erro ao atualizar agendamento:', error);
+      showError('Erro', 'Não foi possível atualizar o agendamento');
+    }
+  };
+
+  // Chat IA Functions
+  const enviarMensagemIA = async () => {
+    if (!novaMensagem.trim()) return;
+
+    const mensagemUsuario: ChatMessage = {
+      id: Date.now().toString(),
+      content: novaMensagem,
+      sender: 'user',
+      timestamp: new Date().toISOString()
+    };
+
+    setChatMessages(prev => [...prev, mensagemUsuario]);
+    const mensagem = novaMensagem;
+    setNovaMensagem('');
+    setCarregandoChat(true);
+
+    try {
+      const response = await apiService.post('/barbearia/chat/ia', {
+        mensagem,
+        telefone: telefoneChat
+      });
+
+      if (response.success) {
+        const respostaIA: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          content: response.data.resposta,
+          sender: 'agent',
+          timestamp: new Date().toISOString()
+        };
+
+        setChatMessages(prev => [...prev, respostaIA]);
+
+        // Se foi criado um agendamento, recarregar dados
+        if (response.data.tipo === 'agendamento' && response.data.agendamento) {
+          await carregarDados();
+          showSuccess('Agendamento criado via IA!');
+        }
+      } else {
+        showError('Erro', response.error || 'Erro ao processar mensagem');
+      }
+    } catch (error) {
+      console.error('Erro no chat IA:', error);
+      showError('Erro', 'Não foi possível enviar a mensagem');
+    } finally {
+      setCarregandoChat(false);
     }
   };
 
@@ -250,92 +283,6 @@ export const Barbearia: React.FC = () => {
       default: return metodo;
     }
   };
-
-  // Funções do Chat
-  const carregarConversas = async () => {
-    try {
-      const response = await apiService.get('/barbearia/conversas');
-      setConversas(response.data);
-    } catch (error) {
-      console.error('Erro ao carregar conversas:', error);
-    }
-  };
-
-  const carregarMensagens = async (conversaId: string) => {
-    try {
-      setCarregandoChat(true);
-      const response = await apiService.get(`/barbearia/conversas/${conversaId}/mensagens`);
-      setMensagens(response.data);
-      setConversaAtiva(conversaId);
-    } catch (error) {
-      console.error('Erro ao carregar mensagens:', error);
-    } finally {
-      setCarregandoChat(false);
-    }
-  };
-
-  const enviarMensagem = async () => {
-    if (!novaMensagem.trim() || !conversaAtiva) return;
-
-    try {
-      setCarregandoChat(true);
-      const response = await apiService.post('/barbearia/chat/enviar', {
-        conversaId: conversaAtiva,
-        mensagem: novaMensagem
-      });
-      
-      // Adicionar mensagem à lista
-      setMensagens(prev => [...prev, {
-        id: Date.now(),
-        texto: novaMensagem,
-        tipo: 'enviada',
-        timestamp: new Date().toISOString()
-      }]);
-      
-      setNovaMensagem('');
-      
-      // Se a resposta contém um agendamento, recarregar agendamentos
-      if (response.data.agendamento) {
-        await carregarDados();
-        showSuccess('Sucesso', 'Agendamento criado com sucesso!');
-      }
-      
-      // Adicionar resposta do Gemini se houver
-      if (response.data.resposta) {
-        setTimeout(() => {
-          setMensagens(prev => [...prev, {
-            id: Date.now() + 1,
-            texto: response.data.resposta,
-            tipo: 'recebida',
-            timestamp: new Date().toISOString()
-          }]);
-        }, 1000);
-      }
-    } catch (error) {
-      console.error('Erro ao enviar mensagem:', error);
-      showError('Erro', 'Erro ao enviar mensagem');
-    } finally {
-      setCarregandoChat(false);
-    }
-  };
-
-  const iniciarNovaConversa = async (telefone: string) => {
-    try {
-      const response = await apiService.post('/barbearia/conversas/nova', { telefone });
-      await carregarConversas();
-      setConversaAtiva(response.data.id);
-      setMensagens([]);
-    } catch (error) {
-      console.error('Erro ao iniciar conversa:', error);
-    }
-  };
-
-  // Carregar conversas quando a aba chat for ativada
-  useEffect(() => {
-    if (activeTab === 'chat') {
-      carregarConversas();
-    }
-  }, [activeTab]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -383,7 +330,7 @@ export const Barbearia: React.FC = () => {
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-500">Bem-vindo, {user?.name}</span>
+              <span className="text-sm text-gray-500">Bem-vindo, {state.user?.name}</span>
             </div>
           </div>
         </div>
@@ -393,6 +340,17 @@ export const Barbearia: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="border-b border-gray-200">
           <nav className="-mb-px flex space-x-8">
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'dashboard'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <ChartBarIcon className="h-5 w-5 inline mr-2" />
+              Dashboard
+            </button>
             <button
               onClick={() => setActiveTab('agendamentos')}
               className={`py-2 px-1 border-b-2 font-medium text-sm ${
@@ -412,8 +370,8 @@ export const Barbearia: React.FC = () => {
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              <PhoneIcon className="h-5 w-5 inline mr-2" />
-              Chat
+              <ChatBubbleLeftRightIcon className="h-5 w-5 inline mr-2" />
+              Chat IA
             </button>
             <button
               onClick={() => setActiveTab('configuracao')}
@@ -442,6 +400,111 @@ export const Barbearia: React.FC = () => {
 
         {/* Content */}
         <div className="mt-6">
+          {activeTab === 'dashboard' && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-6"
+            >
+              {/* Stats Cards */}
+              {stats && (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                  <div className="bg-white p-6 rounded-lg shadow-sm border">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-gray-600">Total de Agendamentos</p>
+                        <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+                      </div>
+                      <CalendarDaysIcon className="w-8 h-8 text-blue-600" />
+                    </div>
+                  </div>
+                  
+                  <div className="bg-white p-6 rounded-lg shadow-sm border">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-gray-600">Confirmados</p>
+                        <p className="text-2xl font-bold text-green-600">{stats.confirmados}</p>
+                      </div>
+                      <CheckCircleIcon className="w-8 h-8 text-green-600" />
+                    </div>
+                  </div>
+                  
+                  <div className="bg-white p-6 rounded-lg shadow-sm border">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-gray-600">Hoje</p>
+                        <p className="text-2xl font-bold text-purple-600">{stats.hoje}</p>
+                      </div>
+                      <ClockIcon className="w-8 h-8 text-purple-600" />
+                    </div>
+                  </div>
+                  
+                  <div className="bg-white p-6 rounded-lg shadow-sm border">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-gray-600">Receita</p>
+                        <p className="text-2xl font-bold text-yellow-600">R$ {stats.receita.toFixed(2)}</p>
+                      </div>
+                      <div className="text-2xl">💰</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Agendamentos de Hoje */}
+              <div className="bg-white shadow rounded-lg">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-lg font-medium text-gray-900">Agendamentos de Hoje</h3>
+                    <button
+                      onClick={() => setModalNovoAgendamento(true)}
+                      className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                    >
+                      <PlusIcon className="h-4 w-4 inline mr-1" />
+                      Novo Agendamento
+                    </button>
+                  </div>
+                </div>
+                <div className="divide-y divide-gray-200">
+                  {agendamentos.filter(ag => {
+                    const hoje = new Date().toISOString().split('T')[0];
+                    return ag.data === hoje;
+                  }).map((agendamento) => (
+                    <div key={agendamento.id} className="px-6 py-4 hover:bg-gray-50">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-4">
+                          <UserIcon className="h-8 w-8 text-gray-400" />
+                          <div>
+                            <p className="font-medium text-gray-900">{agendamento.cliente}</p>
+                            <p className="text-sm text-gray-500">
+                              {formatarServico(agendamento.servico)} • {agendamento.horario.substring(0, 5)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          {getStatusIcon(agendamento.status)}
+                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(agendamento.status)}`}>
+                            {agendamento.status}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {agendamentos.filter(ag => {
+                    const hoje = new Date().toISOString().split('T')[0];
+                    return ag.data === hoje;
+                  }).length === 0 && (
+                    <div className="px-6 py-8 text-center">
+                      <CalendarDaysIcon className="mx-auto h-12 w-12 text-gray-400" />
+                      <h3 className="mt-2 text-sm font-medium text-gray-900">Nenhum agendamento hoje</h3>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
           {activeTab === 'agendamentos' && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -450,8 +513,27 @@ export const Barbearia: React.FC = () => {
             >
               <div className="bg-white shadow rounded-lg">
                 <div className="px-6 py-4 border-b border-gray-200">
-                  <h3 className="text-lg font-medium text-gray-900">Agendamentos de Hoje</h3>
-                  <p className="text-sm text-gray-500">Visualize e gerencie os agendamentos</p>
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h3 className="text-lg font-medium text-gray-900">Todos os Agendamentos</h3>
+                      <p className="text-sm text-gray-500">Visualize e gerencie os agendamentos</p>
+                    </div>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => carregarDados()}
+                        className="bg-gray-600 text-white px-3 py-2 rounded-md hover:bg-gray-700 text-sm"
+                      >
+                        Atualizar
+                      </button>
+                      <button
+                        onClick={() => setModalNovoAgendamento(true)}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                      >
+                        <PlusIcon className="h-4 w-4 inline mr-1" />
+                        Novo
+                      </button>
+                    </div>
+                  </div>
                 </div>
                 <div className="divide-y divide-gray-200">
                   {agendamentos.length === 0 ? (
@@ -482,14 +564,14 @@ export const Barbearia: React.FC = () => {
                                 {formatarServico(agendamento.servico)} • {agendamento.telefone}
                               </div>
                               <div className="text-xs text-gray-400 mt-1">
-                                R$ {(agendamento.valor || 0).toFixed(2)} • {agendamento.pago ? '✅ Pago' : '❌ Não pago'}
+                                {new Date(agendamento.data).toLocaleDateString('pt-BR')} • R$ {(agendamento.valor || 0).toFixed(2)}
                               </div>
                             </div>
                           </div>
                           <div className="flex items-center space-x-4">
                             <div className="text-sm text-gray-900">
                               <ClockIcon className="h-4 w-4 inline mr-1" />
-                              {agendamento.horario}
+                              {agendamento.horario.substring(0, 5)}
                             </div>
                             <div className="flex items-center">
                               {getStatusIcon(agendamento.status)}
@@ -503,7 +585,7 @@ export const Barbearia: React.FC = () => {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  atualizarStatusAgendamento(agendamento.id, 'concluido');
+                                  atualizarStatusAgendamento(agendamento.id, { status: 'concluido' });
                                 }}
                                 className="bg-green-600 text-white px-3 py-1 rounded-md text-xs hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
                                 title="Marcar como concluído"
@@ -522,137 +604,114 @@ export const Barbearia: React.FC = () => {
           )}
 
           {activeTab === 'chat' && (
-             <motion.div
-               initial={{ opacity: 0, y: 20 }}
-               animate={{ opacity: 1, y: 0 }}
-               transition={{ duration: 0.3 }}
-             >
-               <div className="bg-white shadow rounded-lg h-96">
-                 <div className="px-6 py-4 border-b border-gray-200">
-                   <div className="flex justify-between items-center">
-                     <div>
-                       <h3 className="text-lg font-medium text-gray-900">Chat WhatsApp</h3>
-                       <p className="text-sm text-gray-500">Gerencie as conversas e agendamentos</p>
-                     </div>
-                     <button
-                       onClick={() => setModalWhatsApp(true)}
-                       className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
-                     >
-                       <PlusIcon className="h-4 w-4 inline mr-1" />
-                       Nova Conversa
-                     </button>
-                   </div>
-                 </div>
-                 
-                 <div className="flex h-80">
-                   {/* Lista de Conversas */}
-                   <div className="w-1/3 border-r border-gray-200 overflow-y-auto">
-                     {conversas.length === 0 ? (
-                       <div className="p-4 text-center text-gray-500">
-                         <PhoneIcon className="mx-auto h-8 w-8 mb-2" />
-                         <p className="text-sm">Nenhuma conversa ainda</p>
-                       </div>
-                     ) : (
-                       conversas.map((conversa) => (
-                         <div
-                           key={conversa.id}
-                           onClick={() => carregarMensagens(conversa.id)}
-                           className={`p-4 border-b border-gray-100 cursor-pointer hover:bg-gray-50 ${
-                             conversaAtiva === conversa.id ? 'bg-blue-50 border-blue-200' : ''
-                           }`}
-                         >
-                           <div className="flex items-center">
-                             <UserIcon className="h-8 w-8 text-gray-400 mr-3" />
-                             <div className="flex-1">
-                               <p className="text-sm font-medium text-gray-900">{conversa.telefone}</p>
-                               <p className="text-xs text-gray-500 truncate">{conversa.ultima_mensagem}</p>
-                             </div>
-                           </div>
-                         </div>
-                       ))
-                     )}
-                   </div>
-                   
-                   {/* Área de Mensagens */}
-                   <div className="flex-1 flex flex-col">
-                     {conversaAtiva ? (
-                       <>
-                         {/* Mensagens */}
-                         <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                           {carregandoChat ? (
-                             <div className="text-center text-gray-500">
-                               <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
-                               <p className="text-sm mt-2">Carregando...</p>
-                             </div>
-                           ) : mensagens.length === 0 ? (
-                             <div className="text-center text-gray-500">
-                               <p className="text-sm">Nenhuma mensagem ainda</p>
-                             </div>
-                           ) : (
-                             mensagens.map((mensagem) => (
-                               <div
-                                 key={mensagem.id}
-                                 className={`flex ${
-                                   mensagem.tipo === 'enviada' ? 'justify-end' : 'justify-start'
-                                 }`}
-                               >
-                                 <div
-                                   className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                                     mensagem.tipo === 'enviada'
-                                       ? 'bg-blue-600 text-white'
-                                       : 'bg-gray-200 text-gray-900'
-                                   }`}
-                                 >
-                                   <p className="text-sm">{mensagem.texto}</p>
-                                   <p className={`text-xs mt-1 ${
-                                     mensagem.tipo === 'enviada' ? 'text-blue-100' : 'text-gray-500'
-                                   }`}>
-                                     {new Date(mensagem.timestamp).toLocaleTimeString('pt-BR', {
-                                       hour: '2-digit',
-                                       minute: '2-digit'
-                                     })}
-                                   </p>
-                                 </div>
-                               </div>
-                             ))
-                           )}
-                         </div>
-                         
-                         {/* Input de Mensagem */}
-                         <div className="border-t border-gray-200 p-4">
-                           <div className="flex space-x-2">
-                             <input
-                               type="text"
-                               value={novaMensagem}
-                               onChange={(e) => setNovaMensagem(e.target.value)}
-                               onKeyPress={(e) => e.key === 'Enter' && enviarMensagem()}
-                               placeholder="Digite sua mensagem..."
-                               className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                               disabled={carregandoChat}
-                             />
-                             <button
-                               onClick={enviarMensagem}
-                               disabled={carregandoChat || !novaMensagem.trim()}
-                               className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                             >
-                               Enviar
-                             </button>
-                           </div>
-                         </div>
-                       </>
-                     ) : (
-                       <div className="flex-1 flex items-center justify-center text-gray-500">
-                         <div className="text-center">
-                           <PhoneIcon className="mx-auto h-12 w-12 mb-4" />
-                           <p className="text-sm">Selecione uma conversa para começar</p>
-                         </div>
-                       </div>
-                     )}
-                   </div>
-                 </div>
-               </div>
-             </motion.div>
-           )}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <div className="bg-white shadow rounded-lg">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h3 className="text-lg font-medium text-gray-900">Chat com IA para Agendamentos</h3>
+                      <p className="text-sm text-gray-500">Teste o sistema de agendamento por IA</p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="text"
+                        value={telefoneChat}
+                        onChange={(e) => setTelefoneChat(e.target.value)}
+                        placeholder="Telefone do cliente"
+                        className="border border-gray-300 rounded-md px-3 py-1 text-sm"
+                      />
+                      <button
+                        onClick={() => setChatMessages([])}
+                        className="bg-gray-600 text-white px-3 py-2 rounded-md hover:bg-gray-700 text-sm"
+                      >
+                        Limpar Chat
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Chat Messages */}
+                <div className="h-96 flex flex-col">
+                  <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                    {chatMessages.length === 0 ? (
+                      <div className="text-center text-gray-500 mt-8">
+                        <ChatBubbleLeftRightIcon className="mx-auto h-12 w-12 mb-4" />
+                        <p className="text-sm">Inicie uma conversa com a IA</p>
+                        <p className="text-xs mt-1">Exemplo: "Quero agendar um corte para amanhã às 14h"</p>
+                      </div>
+                    ) : (
+                      chatMessages.map((message) => (
+                        <div
+                          key={message.id}
+                          className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+                        >
+                          <div
+                            className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                              message.sender === 'user'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-200 text-gray-900'
+                            }`}
+                          >
+                            <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                            <p className={`text-xs mt-1 ${
+                              message.sender === 'user' ? 'text-blue-100' : 'text-gray-500'
+                            }`}>
+                              {new Date(message.timestamp).toLocaleTimeString('pt-BR', {
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                    
+                    {carregandoChat && (
+                      <div className="flex justify-start">
+                        <div className="bg-gray-200 px-4 py-2 rounded-lg">
+                          <div className="flex space-x-1">
+                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Input de Mensagem */}
+                  <div className="border-t border-gray-200 p-4">
+                    <div className="flex space-x-2">
+                      <input
+                        type="text"
+                        value={novaMensagem}
+                        onChange={(e) => setNovaMensagem(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && !carregandoChat && enviarMensagemIA()}
+                        placeholder="Digite sua mensagem para a IA..."
+                        className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        disabled={carregandoChat}
+                      />
+                      <button
+                        onClick={enviarMensagemIA}
+                        disabled={carregandoChat || !novaMensagem.trim()}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 flex items-center"
+                      >
+                        {carregandoChat ? (
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        ) : (
+                          <PaperAirplaneIcon className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
 
           {activeTab === 'configuracao' && (
             <motion.div
@@ -913,44 +972,103 @@ export const Barbearia: React.FC = () => {
         </div>
       )}
       
-      {/* Modal WhatsApp */}
-      {modalWhatsApp && (
+      {/* Modal Novo Agendamento */}
+      {modalNovoAgendamento && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-96">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Nova Conversa WhatsApp</h3>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Número do WhatsApp (com DDD)
-              </label>
-              <input
-                type="text"
-                value={numeroWhatsApp}
-                onChange={(e) => setNumeroWhatsApp(e.target.value)}
-                placeholder="Ex: 11999999999"
-                className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-              />
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">Novo Agendamento</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
+                <input
+                  type="text"
+                  value={novoAgendamento.cliente}
+                  onChange={(e) => setNovoAgendamento({...novoAgendamento, cliente: e.target.value})}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  placeholder="Nome do cliente"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
+                <input
+                  type="text"
+                  value={novoAgendamento.telefone}
+                  onChange={(e) => setNovoAgendamento({...novoAgendamento, telefone: e.target.value})}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  placeholder="(11) 99999-9999"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Data</label>
+                <input
+                  type="date"
+                  value={novoAgendamento.data}
+                  onChange={(e) => setNovoAgendamento({...novoAgendamento, data: e.target.value})}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Horário</label>
+                <input
+                  type="time"
+                  value={novoAgendamento.horario}
+                  onChange={(e) => setNovoAgendamento({...novoAgendamento, horario: e.target.value})}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Serviço</label>
+                <select
+                  value={novoAgendamento.servico}
+                  onChange={(e) => setNovoAgendamento({...novoAgendamento, servico: e.target.value})}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                >
+                  <option value="cabelo">Corte de Cabelo - R$ 25,00</option>
+                  <option value="barba">Barba - R$ 15,00</option>
+                  <option value="cabelo_barba">Cabelo + Barba - R$ 35,00</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Observações</label>
+                <textarea
+                  value={novoAgendamento.observacoes}
+                  onChange={(e) => setNovoAgendamento({...novoAgendamento, observacoes: e.target.value})}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  rows={3}
+                  placeholder="Observações adicionais..."
+                />
+              </div>
             </div>
+            
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => {
-                  setModalWhatsApp(false);
-                  setNumeroWhatsApp('');
+                  setModalNovoAgendamento(false);
+                  setNovoAgendamento({
+                    cliente: '',
+                    telefone: '',
+                    email: '',
+                    data: '',
+                    horario: '',
+                    servico: 'cabelo',
+                    observacoes: ''
+                  });
                 }}
                 className="bg-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-400"
               >
                 Cancelar
               </button>
               <button
-                onClick={() => {
-                  if (numeroWhatsApp.trim()) {
-                    iniciarNovaConversa(numeroWhatsApp.trim());
-                    setModalWhatsApp(false);
-                    setNumeroWhatsApp('');
-                  }
-                }}
-                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
+                onClick={criarAgendamento}
+                disabled={!novoAgendamento.cliente || !novoAgendamento.telefone || !novoAgendamento.data || !novoAgendamento.horario}
+                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50"
               >
-                Iniciar Conversa
+                Criar Agendamento
               </button>
             </div>
           </div>

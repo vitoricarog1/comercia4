@@ -36,16 +36,37 @@ async function setupBarbeariaTables() {
         pago BOOLEAN DEFAULT false,
         metodo_pagamento ENUM('dinheiro', 'pix', 'cartao', 'pendente') DEFAULT 'pendente',
         observacoes TEXT,
+        criado_por_ia BOOLEAN DEFAULT false,
         status ENUM('confirmado', 'pendente', 'cancelado', 'concluido') DEFAULT 'pendente',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         INDEX idx_agendamentos_user (user_id),
         INDEX idx_agendamentos_data (data),
-        INDEX idx_agendamentos_status (status)
+        INDEX idx_agendamentos_status (status),
+        INDEX idx_agendamentos_data_horario (data, horario)
       )
     `);
     console.log('✅ Tabela agendamentos criada');
+
+    // Criar tabela de base de conhecimento
+    console.log('🔄 Criando tabela de base de conhecimento...');
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS knowledge_base (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        content TEXT NOT NULL,
+        category VARCHAR(100) DEFAULT 'geral',
+        tags JSON,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_knowledge_category (category),
+        INDEX idx_knowledge_active (is_active),
+        FULLTEXT idx_knowledge_content (title, content)
+      )
+    `);
+    console.log('✅ Tabela knowledge_base criada');
 
     // Criar tabela de agents se não existir
     console.log('🔄 Criando tabela de agents...');
@@ -131,13 +152,52 @@ async function setupBarbeariaTables() {
       const [result] = await connection.execute(`
         INSERT INTO users (name, email, password, role, plan, is_active, email_verified)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-      `, ['Barbearia Login', 'login@barbearia.com', barbeariaPassword, 'user', 'premium', true, true]);
+      `, ['Barbearia Login', 'login@barbearia.com', barbeariaPassword, 'barbearia', 'premium', true, true]);
       barbeariaUserId = result.insertId;
       console.log('✅ Usuário da barbearia criado');
     } else {
       barbeariaUserId = existingUser[0].id;
+      // Atualizar role se necessário
+      await connection.execute(
+        'UPDATE users SET role = ? WHERE id = ?',
+        ['barbearia', barbeariaUserId]
+      );
       console.log('✅ Usuário da barbearia já existe');
     }
+
+    // Inserir conhecimento base para a barbearia
+    console.log('🔄 Inserindo base de conhecimento...');
+    const conhecimentoBase = [
+      {
+        title: 'Horários de Funcionamento',
+        content: 'A barbearia funciona de segunda a sábado, das 08:00 às 18:00. Domingos fechado.',
+        category: 'horarios'
+      },
+      {
+        title: 'Serviços e Preços',
+        content: 'Corte de Cabelo: R$ 25,00. Barba: R$ 15,00. Cabelo + Barba: R$ 35,00. Todos os serviços incluem finalização com produtos de qualidade.',
+        category: 'servicos'
+      },
+      {
+        title: 'Política de Cancelamento',
+        content: 'Cancelamentos devem ser feitos com pelo menos 2 horas de antecedência. Cancelamentos de última hora podem ser cobrados.',
+        category: 'politicas'
+      },
+      {
+        title: 'Formas de Pagamento',
+        content: 'Aceitamos dinheiro, PIX, cartão de débito e crédito. Pagamento pode ser feito no local ou antecipado via PIX.',
+        category: 'pagamento'
+      }
+    ];
+
+    for (const conhecimento of conhecimentoBase) {
+      await connection.execute(`
+        INSERT INTO knowledge_base (title, content, category, is_active)
+        VALUES (?, ?, ?, true)
+        ON DUPLICATE KEY UPDATE content = VALUES(content)
+      `, [conhecimento.title, conhecimento.content, conhecimento.category]);
+    }
+    console.log('✅ Base de conhecimento inserida');
 
     // Criar agente da barbearia
     console.log('🔄 Criando agente da barbearia...');
@@ -171,7 +231,12 @@ Confirme todos os detalhes antes de finalizar o agendamento.`;
         fim: '18:00'
       },
       diasFolga: [],
-      intervalos: 30
+      intervalos: 30,
+      servicos: {
+        'cabelo': { nome: 'Corte de Cabelo', preco: 25.00 },
+        'barba': { nome: 'Barba', preco: 15.00 },
+        'cabelo_barba': { nome: 'Cabelo + Barba', preco: 35.00 }
+      }
     };
 
     await connection.execute(`
@@ -190,6 +255,69 @@ Confirme todos os detalhes antes de finalizar o agendamento.`;
       JSON.stringify(modelConfig)
     ]);
     console.log('✅ Agente da barbearia criado/atualizado');
+
+    // Inserir alguns agendamentos de exemplo
+    console.log('🔄 Inserindo agendamentos de exemplo...');
+    const hoje = new Date().toISOString().split('T')[0];
+    const amanha = new Date();
+    amanha.setDate(amanha.getDate() + 1);
+    const amanhaStr = amanha.toISOString().split('T')[0];
+    
+    const agendamentosExemplo = [
+      {
+        cliente: 'João Silva',
+        telefone: '11999999999',
+        email: 'joao@email.com',
+        data: hoje,
+        horario: '09:00:00',
+        servico: 'cabelo',
+        valor: 25.00,
+        status: 'confirmado'
+      },
+      {
+        cliente: 'Maria Santos',
+        telefone: '11888888888',
+        email: 'maria@email.com',
+        data: hoje,
+        horario: '14:30:00',
+        servico: 'cabelo_barba',
+        valor: 35.00,
+        status: 'confirmado'
+      },
+      {
+        cliente: 'Pedro Costa',
+        telefone: '11777777777',
+        data: amanhaStr,
+        horario: '10:00:00',
+        servico: 'barba',
+        valor: 15.00,
+        status: 'pendente'
+      }
+    ];
+
+    for (const agendamento of agendamentosExemplo) {
+      await connection.execute(`
+        INSERT INTO agendamentos (
+          user_id, cliente, telefone, email, data, horario, servico, 
+          valor, pago, metodo_pagamento, status, criado_por_ia
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE cliente = VALUES(cliente)
+      `, [
+        barbeariaUserId,
+        agendamento.cliente,
+        agendamento.telefone,
+        agendamento.email || null,
+        agendamento.data,
+        agendamento.horario,
+        agendamento.servico,
+        agendamento.valor,
+        false,
+        'pendente',
+        agendamento.status,
+        false
+      ]);
+    }
+    console.log('✅ Agendamentos de exemplo inseridos');
 
     console.log('\n🎉 Setup das tabelas da barbearia concluído!');
     console.log('📧 Email da barbearia: login@barbearia.com');

@@ -287,6 +287,76 @@ class ApiService {
     return userStr ? JSON.parse(userStr) : null;
   }
 
+  // Password change method
+  async changePassword(passwordData: { currentPassword: string; newPassword: string; confirmPassword: string }): Promise<ApiResponse> {
+    return this.request('/auth/profile', {
+      method: 'PUT',
+      body: JSON.stringify(passwordData),
+    });
+  }
+
+  // Barbearia specific methods
+  async getBarbeariaAgendamentos(filters: any = {}): Promise<ApiResponse> {
+    const queryParams = new URLSearchParams();
+    Object.keys(filters).forEach(key => {
+      if (filters[key]) queryParams.append(key, filters[key]);
+    });
+    
+    return this.request(`/barbearia/agendamentos?${queryParams}`);
+  }
+
+  async getBarbeariaStats(): Promise<ApiResponse> {
+    return this.request('/barbearia/stats');
+  }
+
+  async getBarbeariaConfig(): Promise<ApiResponse> {
+    return this.request('/barbearia/configuracao');
+  }
+
+  async saveBarbeariaConfig(config: any): Promise<ApiResponse> {
+    return this.request('/barbearia/configuracao', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    });
+  }
+
+  async createBarbeariaAgendamento(agendamento: any): Promise<ApiResponse> {
+    return this.request('/barbearia/agendamentos', {
+      method: 'POST',
+      body: JSON.stringify(agendamento),
+    });
+  }
+
+  async updateBarbeariaAgendamento(id: string, updates: any): Promise<ApiResponse> {
+    return this.request(`/barbearia/agendamentos/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async deleteBarbeariaAgendamento(id: string): Promise<ApiResponse> {
+    return this.request(`/barbearia/agendamentos/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async chatWithIA(mensagem: string, telefone?: string): Promise<ApiResponse> {
+    return this.request('/barbearia/chat/ia', {
+      method: 'POST',
+      body: JSON.stringify({ mensagem, telefone }),
+    });
+  }
+
+  async searchKnowledge(query: string): Promise<ApiResponse> {
+    return this.request(`/barbearia/conhecimento?query=${encodeURIComponent(query)}`);
+  }
+
+  async addKnowledge(knowledge: { title: string; content: string; category?: string }): Promise<ApiResponse> {
+    return this.request('/barbearia/conhecimento', {
+      method: 'POST',
+      body: JSON.stringify(knowledge),
+    });
+  }
   logout() {
     this.token = null;
     localStorage.removeItem('token');

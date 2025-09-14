@@ -85,6 +85,14 @@ const AppContent: React.FC = () => {
               </ProtectedRoute>
             } 
           />
+          <Route 
+            path="/barbearia/*" 
+            element={
+              <ProtectedRoute>
+                <Barbearia />
+              </ProtectedRoute>
+            } 
+          />
           <Route
             path="/dashboard/*"
             element={
