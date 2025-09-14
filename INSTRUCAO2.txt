@@ -1,0 +1,271 @@
+# INSTRUÇÃO2 - Configurações Externas e Setup Completo
+# Sistema IA Agents SaaS - Plataforma Completa
+
+## 🚀 CONFIGURAÇÃO DO AMBIENTE
+
+### Pré-requisitos
+- Node.js 18+ 
+- MySQL/MariaDB 10.4+
+- XAMPP (recomendado para desenvolvimento)
+- Git
+
+### Variáveis de Ambiente (.env)
+```
+# Banco de Dados
+DB_HOST=localhost
+DB_USER=root
+DB_PASSWORD=
+DB_NAME=ai_agents_saas_main
+DB_PORT=3306
+
+# JWT
+JWT_SECRET=sua_chave_secreta_super_forte_aqui
+JWT_EXPIRES_IN=7d
+
+# Servidor
+PORT=3001
+NODE_ENV=development
+
+# Provedores de IA
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+GOOGLE_API_KEY=AIza...
+COHERE_API_KEY=...
+GROQ_API_KEY=gsk_...
+
+# Email (Nodemailer)
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USER=seu_email@gmail.com
+EMAIL_PASS=sua_senha_app
+
+# WhatsApp (Evolution API)
+WHATSAPP_API_URL=http://localhost:8080
+WHATSAPP_API_KEY=sua_chave_evolution
+
+# Pagamentos (PIX)
+PIX_CERT_PATH=./certificates/
+PIX_CLIENT_ID=seu_client_id
+PIX_CLIENT_SECRET=seu_client_secret
+
+# Analytics
+ANALYTICS_RETENTION_DAYS=365
+
+# Backup
+BACKUP_SCHEDULE=0 2 * * *
+BACKUP_RETENTION_DAYS=30
+```
+
+## 📦 INSTALAÇÃO E SETUP
+
+### 1. Clone e Configuração Inicial
+```bash
+git clone <seu-repositorio>
+cd ia-att
+
+# Frontend
+npm install
+
+# Backend
+cd server
+npm install
+cp .env.example .env
+# Edite o .env com suas configurações
+```
+
+### 2. Configuração do Banco de Dados
+```bash
+# Inicie o MySQL/MariaDB
+# Execute as migrações
+cd server
+node setup-database.js
+
+# Migração de Analytics
+mysql -u root -p ai_agents_saas_main < database/migrations/create_analytics_tables.sql
+```
+
+### 3. Criação do Usuário Admin
+```bash
+node create-admin.js
+# Siga as instruções para criar o primeiro admin
+```
+
+### 4. Inicialização dos Serviços
+```bash
+# Terminal 1 - Backend
+cd server
+npm start
+
+# Terminal 2 - Frontend
+cd ..
+npm run dev
+```
+
+## 🔧 CONFIGURAÇÕES EXTERNAS
+
+### Provedores de IA
+
+#### OpenAI
+1. Acesse: https://platform.openai.com/api-keys
+2. Crie uma nova API key
+3. Adicione no .env: `OPENAI_API_KEY=sk-...`
+
+#### Anthropic (Claude)
+1. Acesse: https://console.anthropic.com/
+2. Gere uma API key
+3. Adicione no .env: `ANTHROPIC_API_KEY=sk-ant-...`
+
+#### Google (Gemini)
+1. Acesse: https://makersuite.google.com/app/apikey
+2. Crie uma API key
+3. Adicione no .env: `GOOGLE_API_KEY=AIza...`
+
+#### Cohere
+1. Acesse: https://dashboard.cohere.ai/api-keys
+2. Gere uma API key
+3. Adicione no .env: `COHERE_API_KEY=...`
+
+#### Groq
+1. Acesse: https://console.groq.com/keys
+2. Crie uma API key
+3. Adicione no .env: `GROQ_API_KEY=gsk_...`
+
+### Email (Notificações)
+
+#### Gmail SMTP
+1. Ative a verificação em 2 etapas
+2. Gere uma senha de app específica
+3. Configure no .env:
+```
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USER=seu_email@gmail.com
+EMAIL_PASS=senha_app_gerada
+```
+
+### WhatsApp Integration
+
+#### Evolution API
+1. Clone: https://github.com/EvolutionAPI/evolution-api
+2. Configure e inicie o serviço
+3. Obtenha a API key
+4. Configure no .env:
+```
+WHATSAPP_API_URL=http://localhost:8080
+WHATSAPP_API_KEY=sua_chave
+```
+
+### Pagamentos PIX
+
+#### Configuração de Certificados
+1. Obtenha certificados do seu banco/PSP
+2. Coloque em `server/certificates/`
+3. Configure no .env:
+```
+PIX_CERT_PATH=./certificates/
+PIX_CLIENT_ID=seu_client_id
+PIX_CLIENT_SECRET=seu_client_secret
+```
+
+## 🗄️ ESTRUTURA DO BANCO DE DADOS
+
+### Tabelas Principais
+- `users` - Usuários do sistema
+- `agents` - Agentes de IA configurados
+- `conversations` - Conversas entre usuários e agentes
+- `messages` - Mensagens das conversas
+- `integrations` - Integrações externas
+- `notifications` - Sistema de notificações
+- `payments` - Controle de pagamentos
+- `whatsapp_sessions` - Sessões do WhatsApp
+
+### Tabelas de Analytics
+- `analytics_events` - Eventos de usuário
+- `analytics_daily_metrics` - Métricas diárias agregadas
+- `analytics_performance_metrics` - Métricas de performance
+- `analytics_funnels` - Configuração de funis
+- `analytics_dashboards` - Dashboards personalizados
+- `analytics_scheduled_reports` - Relatórios agendados
+- `analytics_user_segments` - Segmentação de usuários
+- `analytics_goals` - Metas e objetivos
+
+## 🔐 SEGURANÇA
+
+### Configurações Recomendadas
+1. **JWT Secret**: Use uma chave forte de 256 bits
+2. **HTTPS**: Configure SSL em produção
+3. **Rate Limiting**: Já implementado (100 req/15min)
+4. **CORS**: Configure domínios permitidos
+5. **Helmet**: Proteção de headers HTTP
+6. **Validação**: Sanitização de inputs
+
+### Backup Automático
+- Configurado para executar diariamente às 2h
+- Retenção de 30 dias por padrão
+- Backup completo do banco de dados
+- Logs de auditoria incluídos
+
+## 📊 MONITORAMENTO
+
+### Analytics Disponíveis
+- Eventos de usuário em tempo real
+- Métricas de performance da API
+- Análise de funis de conversão
+- Segmentação avançada de usuários
+- Relatórios automatizados (Excel/PDF)
+- Dashboards interativos
+
+### Logs e Auditoria
+- Todas as ações são logadas
+- Auditoria de segurança
+- Monitoramento de performance
+- Alertas automáticos
+
+## 🚀 DEPLOY EM PRODUÇÃO
+
+### Checklist Pré-Deploy
+- [ ] Configurar todas as variáveis de ambiente
+- [ ] Executar migrações do banco
+- [ ] Configurar SSL/HTTPS
+- [ ] Configurar domínio personalizado
+- [ ] Testar todas as integrações
+- [ ] Configurar backup automático
+- [ ] Configurar monitoramento
+
+### Comandos de Build
+```bash
+# Frontend
+npm run build
+
+# Backend (PM2 recomendado)
+npm install -g pm2
+pm2 start server/app.js --name "ia-agents-api"
+pm2 startup
+pm2 save
+```
+
+## 📞 SUPORTE
+
+### Logs Importantes
+- `server/logs/` - Logs da aplicação
+- `auditoria.txt` - Log de auditoria
+- Console do navegador - Erros frontend
+
+### Troubleshooting Comum
+1. **Erro de conexão DB**: Verifique credenciais no .env
+2. **API keys inválidas**: Verifique configuração dos provedores
+3. **Erro CORS**: Configure domínios permitidos
+4. **WhatsApp não conecta**: Verifique Evolution API
+5. **Emails não enviados**: Verifique configuração SMTP
+
+### Contatos
+- Documentação: README.md
+- Issues: GitHub Issues
+- Logs: Verifique arquivos de auditoria
+
+---
+
+**Sistema IA Agents SaaS v2.0**
+*Plataforma completa com Analytics, Notificações, WhatsApp, Pagamentos e muito mais!*
+
+Última atualização: Janeiro 2025

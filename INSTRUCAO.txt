@@ -1,0 +1,2427 @@
+===========================================
+           INSTRUÇÕES PARA IMPLEMENTAÇÃO
+           SISTEMA IA AGENTS SAAS - 100% FUNCIONAL
+           Data: $(Get-Date -Format 'dd/MM/yyyy HH:mm:ss')
+===========================================
+
+🎯 OBJETIVO
+===========
+Implementar TODAS as funcionalidades que não funcionam mas deveriam funcionar no sistema IA Agents SaaS,
+baseado nas auditorias 2 e 3. Estas instruções devem ser seguidas EXATAMENTE para tornar o sistema 100% funcional.
+
+⚠️ IMPORTANTE: NÃO CRIAR ARQUIVOS DE EXEMPLO. IMPLEMENTAR FUNCIONALIDADES REAIS E FUNCIONAIS.
+
+📋 LISTA DE IMPLEMENTAÇÕES OBRIGATÓRIAS
+=======================================
+
+1. SISTEMA DE CHAT EM TEMPO REAL - SOCKET.IO
+=============================================
+
+1.1 IMPLEMENTAR EVENTOS SOCKET.IO NO BACKEND (server/app.js)
+- Adicionar handlers de conexão Socket.IO
+- Implementar eventos de mensagens em tempo real
+- Configurar salas por usuário
+- Implementar notificações de status de agentes
+- Configurar atualizações automáticas de conversas
+
+CÓDIGO OBRIGATÓRIO:
+```javascript
+// Em server/app.js - adicionar após configuração do Socket.IO
+io.on('connection', (socket) => {
+  console.log('Usuário conectado:', socket.id);
+  
+  // Entrar na sala do usuário
+  socket.on('join-user-room', (userId) => {
+    socket.join(`user-${userId}`);
+    console.log(`Usuário ${userId} entrou na sala`);
+  });
+  
+  // Enviar mensagem
+  socket.on('send-message', async (data) => {
+    try {
+      const { conversationId, content, agentId, userId } = data;
+      
+      // Salvar mensagem do usuário
+      const userMessage = await Message.create({
+        conversation_id: conversationId,
+        sender: 'user',
+        content: content,
+        message_type: 'text',
+        status: 'sent'
+      }, userId);
+      
+      // Emitir mensagem para a sala
+      io.to(`user-${userId}`).emit('new-message', userMessage);
+      
+      // Buscar agente e gerar resposta IA
+      const agent = await Agent.findById(agentId, userId);
+      if (agent) {
+        const aiResponse = await AIService.generateResponse(
+          agent.provider,
+          agent.model,
+          content,
+          {
+            temperature: agent.temperature,
+            max_tokens: agent.max_tokens,
+            system_prompt: agent.system_prompt
+          }
+        );
+        
+        // Salvar resposta da IA
+        const aiMessage = await Message.create({
+          conversation_id: conversationId,
+          sender: 'agent',
+          content: aiResponse,
+          message_type: 'text',
+          status: 'sent'
+        }, userId);
+        
+        // Emitir resposta da IA
+        io.to(`user-${userId}`).emit('new-message', aiMessage);
+      }
+    } catch (error) {
+      socket.emit('error', { message: error.message });
+    }
+  });
+  
+  // Notificar status de agente
+  socket.on('agent-status-change', (data) => {
+    const { userId, agentId, status } = data;
+    io.to(`user-${userId}`).emit('agent-status-updated', { agentId, status });
+  });
+  
+  // Desconexão
+  socket.on('disconnect', () => {
+    console.log('Usuário desconectado:', socket.id);
+  });
+});
+```
+
+1.2 IMPLEMENTAR HOOK SOCKET.IO NO FRONTEND (src/hooks/useSocket.ts)
+- Conectar com o servidor Socket.IO
+- Implementar listeners de eventos
+- Gerenciar estado de conexão
+- Implementar emissão de eventos
+
+CÓDIGO OBRIGATÓRIO:
+```typescript
+// src/hooks/useSocket.ts - SUBSTITUIR CONTEÚDO COMPLETO
+import { useEffect, useRef, useState } from 'react';
+import { io, Socket } from 'socket.io-client';
+import { useAppContext } from '../contexts/AppContext';
+
+interface Message {
+  id: number;
+  conversation_id: number;
+  sender: 'user' | 'agent';
+  content: string;
+  message_type: string;
+  status: string;
+  created_at: string;
+}
+
+export const useSocket = () => {
+  const { user } = useAppContext();
+  const socketRef = useRef<Socket | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+
+  useEffect(() => {
+    if (user) {
+      // Conectar ao servidor Socket.IO
+      socketRef.current = io('http://localhost:3001', {
+        transports: ['websocket', 'polling']
+      });
+
+      const socket = socketRef.current;
+
+      // Eventos de conexão
+      socket.on('connect', () => {
+        setIsConnected(true);
+        socket.emit('join-user-room', user.id);
+      });
+
+      socket.on('disconnect', () => {
+        setIsConnected(false);
+      });
+
+      // Receber novas mensagens
+      socket.on('new-message', (message: Message) => {
+        setMessages(prev => [...prev, message]);
+      });
+
+      // Receber erros
+      socket.on('error', (error: { message: string }) => {
+        console.error('Socket error:', error.message);
+      });
+
+      return () => {
+        socket.disconnect();
+      };
+    }
+  }, [user]);
+
+  const sendMessage = (conversationId: number, content: string, agentId: number) => {
+    if (socketRef.current && user) {
+      socketRef.current.emit('send-message', {
+        conversationId,
+        content,
+        agentId,
+        userId: user.id
+      });
+    }
+  };
+
+  const updateAgentStatus = (agentId: number, status: string) => {
+    if (socketRef.current && user) {
+      socketRef.current.emit('agent-status-change', {
+        userId: user.id,
+        agentId,
+        status
+      });
+    }
+  };
+
+  return {
+    isConnected,
+    messages,
+    sendMessage,
+    updateAgentStatus,
+    setMessages
+  };
+};
+```
+
+2. SISTEMA DE INTELIGÊNCIA ARTIFICIAL - AI SERVICE
+==================================================
+
+2.1 IMPLEMENTAR AI SERVICE REAL (server/services/aiService.js)
+- Conectar com OpenAI API (ChatGPT)
+- Conectar com Google Gemini API
+- Conectar com Hugging Face API
+- Implementar sistema RAG (Retrieval-Augmented Generation)
+- Gerenciar fallback entre provedores
+
+CÓDIGO OBRIGATÓRIO:
+```javascript
+// server/services/aiService.js - SUBSTITUIR CONTEÚDO COMPLETO
+const axios = require('axios');
+const { OpenAI } = require('openai');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+
+class AIService {
+  constructor() {
+    // Inicializar clientes
+    this.openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY
+    });
+    
+    this.gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    this.huggingFaceToken = process.env.HUGGINGFACE_TOKEN;
+  }
+
+  async generateResponse(provider, model, prompt, config = {}) {
+    try {
+      switch (provider) {
+        case 'chatgpt':
+          return await this.callOpenAI(model, prompt, config);
+        case 'gemini':
+          return await this.callGemini(model, prompt, config);
+        case 'huggingface':
+          return await this.callHuggingFace(model, prompt, config);
+        default:
+          throw new Error(`Provedor não suportado: ${provider}`);
+      }
+    } catch (error) {
+      console.error(`Erro no provedor ${provider}:`, error.message);
+      
+      // Fallback para outros provedores
+      if (provider !== 'chatgpt') {
+        try {
+          return await this.callOpenAI('gpt-3.5-turbo', prompt, config);
+        } catch (fallbackError) {
+          throw new Error('Todos os provedores de IA falharam');
+        }
+      }
+      
+      throw error;
+    }
+  }
+
+  async callOpenAI(model, prompt, config) {
+    const response = await this.openai.chat.completions.create({
+      model: model || 'gpt-3.5-turbo',
+      messages: [
+        {
+          role: 'system',
+          content: config.system_prompt || 'Você é um assistente útil.'
+        },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      temperature: config.temperature || 0.7,
+      max_tokens: config.max_tokens || 1000
+    });
+
+    return response.choices[0].message.content;
+  }
+
+  async callGemini(model, prompt, config) {
+    const genModel = this.gemini.getGenerativeModel({ 
+      model: model || 'gemini-pro' 
+    });
+
+    const fullPrompt = config.system_prompt 
+      ? `${config.system_prompt}\n\nUsuário: ${prompt}`
+      : prompt;
+
+    const result = await genModel.generateContent(fullPrompt);
+    const response = await result.response;
+    
+    return response.text();
+  }
+
+  async callHuggingFace(model, prompt, config) {
+    const response = await axios.post(
+      `https://api-inference.huggingface.co/models/${model || 'microsoft/DialoGPT-medium'}`,
+      {
+        inputs: prompt,
+        parameters: {
+          temperature: config.temperature || 0.7,
+          max_length: config.max_tokens || 1000
+        }
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${this.huggingFaceToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    return response.data[0]?.generated_text || 'Erro ao gerar resposta';
+  }
+
+  // Sistema RAG - Busca na base de conhecimento
+  async searchKnowledge(query, userId) {
+    const db = require('../config/database');
+    
+    try {
+      const results = await db.executeUserQuery(
+        `SELECT title, content, tags 
+         FROM knowledge_base 
+         WHERE MATCH(title, content, tags) AGAINST(? IN NATURAL LANGUAGE MODE)
+         ORDER BY MATCH(title, content, tags) AGAINST(? IN NATURAL LANGUAGE MODE) DESC
+         LIMIT 5`,
+        [query, query],
+        userId
+      );
+      
+      return results;
+    } catch (error) {
+      console.error('Erro na busca de conhecimento:', error);
+      return [];
+    }
+  }
+
+  // Construir prompt com contexto RAG
+  async buildContextualPrompt(prompt, userId, agentConfig) {
+    const knowledgeResults = await this.searchKnowledge(prompt, userId);
+    
+    let contextualPrompt = agentConfig.system_prompt || 'Você é um assistente útil.';
+    
+    if (knowledgeResults.length > 0) {
+      contextualPrompt += '\n\nInformações relevantes da base de conhecimento:\n';
+      knowledgeResults.forEach((item, index) => {
+        contextualPrompt += `${index + 1}. ${item.title}: ${item.content}\n`;
+      });
+      contextualPrompt += '\nUse essas informações para responder quando relevante.\n';
+    }
+    
+    return contextualPrompt;
+  }
+}
+
+module.exports = new AIService();
+```
+
+3. SISTEMA DE CHAT FUNCIONAL - CHAT CONTROLLER
+==============================================
+
+3.1 IMPLEMENTAR CHAT CONTROLLER COMPLETO (server/controllers/chatController.js)
+- Processar mensagens com IA
+- Gerenciar conversas em tempo real
+- Integrar com Socket.IO
+- Implementar sistema RAG
+
+CÓDIGO OBRIGATÓRIO:
+```javascript
+// server/controllers/chatController.js - SUBSTITUIR CONTEÚDO COMPLETO
+const Message = require('../models/Message');
+const Conversation = require('../models/Conversation');
+const Agent = require('../models/Agent');
+const AIService = require('../services/aiService');
+
+const chatController = {
+  // Enviar mensagem
+  async sendMessage(req, res) {
+    try {
+      const { conversationId, content, agentId } = req.body;
+      const userId = req.user.id;
+
+      // Validar dados
+      if (!content || !agentId) {
+        return res.status(400).json({ 
+          error: 'Conteúdo da mensagem e ID do agente são obrigatórios' 
+        });
+      }
+
+      // Buscar ou criar conversa
+      let conversation;
+      if (conversationId) {
+        conversation = await Conversation.findById(conversationId, userId);
+      } else {
+        conversation = await Conversation.create({
+          agent_id: agentId,
+          customer_info: JSON.stringify({ user_id: userId }),
+          channel_type: 'chat',
+          status: 'active'
+        }, userId);
+      }
+
+      // Salvar mensagem do usuário
+      const userMessage = await Message.create({
+        conversation_id: conversation.id,
+        sender: 'user',
+        content: content,
+        message_type: 'text',
+        status: 'sent'
+      }, userId);
+
+      // Buscar configuração do agente
+      const agent = await Agent.findById(agentId, userId);
+      if (!agent) {
+        return res.status(404).json({ error: 'Agente não encontrado' });
+      }
+
+      // Construir prompt contextual com RAG
+      const contextualPrompt = await AIService.buildContextualPrompt(
+        content, 
+        userId, 
+        agent
+      );
+
+      // Gerar resposta da IA
+      const aiResponse = await AIService.generateResponse(
+        agent.provider,
+        agent.model,
+        content,
+        {
+          temperature: agent.temperature,
+          max_tokens: agent.max_tokens,
+          system_prompt: contextualPrompt
+        }
+      );
+
+      // Salvar resposta da IA
+      const aiMessage = await Message.create({
+        conversation_id: conversation.id,
+        sender: 'agent',
+        content: aiResponse,
+        message_type: 'text',
+        status: 'sent'
+      }, userId);
+
+      // Emitir via Socket.IO se disponível
+      if (req.app.get('io')) {
+        req.app.get('io').to(`user-${userId}`).emit('new-message', userMessage);
+        req.app.get('io').to(`user-${userId}`).emit('new-message', aiMessage);
+      }
+
+      res.json({
+        success: true,
+        conversation: conversation,
+        userMessage: userMessage,
+        aiMessage: aiMessage
+      });
+
+    } catch (error) {
+      console.error('Erro ao enviar mensagem:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // Buscar mensagens de uma conversa
+  async getMessages(req, res) {
+    try {
+      const { conversationId } = req.params;
+      const userId = req.user.id;
+
+      const messages = await Message.findByConversationId(conversationId, userId);
+      
+      res.json({ messages });
+    } catch (error) {
+      console.error('Erro ao buscar mensagens:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // Criar nova conversa
+  async createConversation(req, res) {
+    try {
+      const { agentId, title } = req.body;
+      const userId = req.user.id;
+
+      const conversation = await Conversation.create({
+        agent_id: agentId,
+        customer_info: JSON.stringify({ 
+          user_id: userId,
+          title: title || 'Nova Conversa'
+        }),
+        channel_type: 'chat',
+        status: 'active'
+      }, userId);
+
+      res.json({ conversation });
+    } catch (error) {
+      console.error('Erro ao criar conversa:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // Buscar conversas do usuário
+  async getConversations(req, res) {
+    try {
+      const userId = req.user.id;
+      const { page = 1, limit = 20 } = req.query;
+
+      const conversations = await Conversation.findByUserId(
+        userId, 
+        parseInt(page), 
+        parseInt(limit)
+      );
+
+      res.json({ conversations });
+    } catch (error) {
+      console.error('Erro ao buscar conversas:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // Buscar na base de conhecimento
+  async searchKnowledge(req, res) {
+    try {
+      const { query } = req.query;
+      const userId = req.user.id;
+
+      if (!query) {
+        return res.status(400).json({ error: 'Query de busca é obrigatória' });
+      }
+
+      const results = await AIService.searchKnowledge(query, userId);
+      
+      res.json({ results });
+    } catch (error) {
+      console.error('Erro na busca de conhecimento:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // Adicionar conhecimento
+  async addKnowledge(req, res) {
+    try {
+      const { title, content, tags } = req.body;
+      const userId = req.user.id;
+      const db = require('../config/database');
+
+      if (!title || !content) {
+        return res.status(400).json({ 
+          error: 'Título e conteúdo são obrigatórios' 
+        });
+      }
+
+      const result = await db.executeUserQuery(
+        `INSERT INTO knowledge_base (title, content, tags, created_at, updated_at) 
+         VALUES (?, ?, ?, NOW(), NOW())`,
+        [title, content, tags || ''],
+        userId
+      );
+
+      res.json({ 
+        success: true, 
+        id: result.insertId,
+        message: 'Conhecimento adicionado com sucesso'
+      });
+    } catch (error) {
+      console.error('Erro ao adicionar conhecimento:', error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+};
+
+module.exports = chatController;
+```
+
+4. INTEGRAÇÃO WHATSAPP FUNCIONAL
+================================
+
+4.1 IMPLEMENTAR WHATSAPP SERVICE REAL (server/services/whatsappService.js)
+- Conectar com WhatsApp Business API
+- Gerenciar sessões e QR codes
+- Processar webhooks
+- Enviar e receber mensagens
+
+CÓDIGO OBRIGATÓRIO:
+```javascript
+// server/services/whatsappService.js - SUBSTITUIR CONTEÚDO COMPLETO
+const axios = require('axios');
+const WhatsAppSession = require('../models/WhatsAppSession');
+const Message = require('../models/Message');
+const Conversation = require('../models/Conversation');
+const Agent = require('../models/Agent');
+const AIService = require('./aiService');
+
+class WhatsAppService {
+  constructor() {
+    this.apiUrl = 'https://graph.facebook.com/v18.0';
+    this.accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+    this.phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    this.verifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
+  }
+
+  // Verificar webhook
+  verifyWebhook(mode, token, challenge) {
+    if (mode === 'subscribe' && token === this.verifyToken) {
+      return challenge;
+    }
+    return null;
+  }
+
+  // Processar webhook
+  async handleWebhook(body) {
+    try {
+      if (body.object === 'whatsapp_business_account') {
+        for (const entry of body.entry) {
+          for (const change of entry.changes) {
+            if (change.field === 'messages') {
+              await this.processIncomingMessage(change.value);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao processar webhook:', error);
+    }
+  }
+
+  // Processar mensagem recebida
+  async processIncomingMessage(value) {
+    try {
+      if (!value.messages) return;
+
+      for (const message of value.messages) {
+        const phoneNumber = message.from;
+        const messageText = message.text?.body || '';
+        const messageId = message.id;
+
+        // Buscar ou criar sessão WhatsApp
+        let session = await WhatsAppSession.findByPhoneNumber(phoneNumber);
+        if (!session) {
+          // Criar nova sessão e atribuir ao primeiro agente disponível
+          const agents = await Agent.findAll(1); // Assumindo usuário 1 como padrão
+          const defaultAgent = agents.find(a => a.status === 'active') || agents[0];
+          
+          if (!defaultAgent) {
+            console.error('Nenhum agente disponível para nova sessão');
+            return;
+          }
+
+          session = await WhatsAppSession.create({
+            phone_number: phoneNumber,
+            agent_id: defaultAgent.id,
+            status: 'active',
+            metadata: JSON.stringify({ contact_name: value.contacts?.[0]?.profile?.name || phoneNumber })
+          }, 1); // Assumindo usuário 1
+        }
+
+        // Buscar ou criar conversa
+        let conversation = await Conversation.findByPhoneNumber(phoneNumber, session.user_id);
+        if (!conversation) {
+          conversation = await Conversation.create({
+            agent_id: session.agent_id,
+            customer_info: JSON.stringify({
+              phone: phoneNumber,
+              name: value.contacts?.[0]?.profile?.name || phoneNumber
+            }),
+            channel_type: 'whatsapp',
+            status: 'active'
+          }, session.user_id);
+        }
+
+        // Salvar mensagem recebida
+        await Message.create({
+          conversation_id: conversation.id,
+          sender: 'user',
+          content: messageText,
+          message_type: 'text',
+          status: 'received',
+          whatsapp_message_id: messageId
+        }, session.user_id);
+
+        // Gerar resposta automática se agente estiver ativo
+        const agent = await Agent.findById(session.agent_id, session.user_id);
+        if (agent && agent.status === 'active') {
+          const contextualPrompt = await AIService.buildContextualPrompt(
+            messageText,
+            session.user_id,
+            agent
+          );
+
+          const aiResponse = await AIService.generateResponse(
+            agent.provider,
+            agent.model,
+            messageText,
+            {
+              temperature: agent.temperature,
+              max_tokens: agent.max_tokens,
+              system_prompt: contextualPrompt
+            }
+          );
+
+          // Salvar resposta da IA
+          await Message.create({
+            conversation_id: conversation.id,
+            sender: 'agent',
+            content: aiResponse,
+            message_type: 'text',
+            status: 'sent'
+          }, session.user_id);
+
+          // Enviar resposta via WhatsApp
+          await this.sendMessage(phoneNumber, aiResponse);
+        }
+
+        // Atualizar última atividade da sessão
+        await WhatsAppSession.updateLastActivity(session.id);
+      }
+    } catch (error) {
+      console.error('Erro ao processar mensagem WhatsApp:', error);
+    }
+  }
+
+  // Enviar mensagem
+  async sendMessage(to, message) {
+    try {
+      const response = await axios.post(
+        `${this.apiUrl}/${this.phoneNumberId}/messages`,
+        {
+          messaging_product: 'whatsapp',
+          to: to,
+          text: { body: message }
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      return response.data;
+    } catch (error) {
+      console.error('Erro ao enviar mensagem WhatsApp:', error);
+      throw error;
+    }
+  }
+
+  // Buscar sessões ativas
+  async getActiveSessions(userId) {
+    return await WhatsAppSession.findActive(userId);
+  }
+
+  // Atribuir agente a sessão
+  async assignAgent(sessionId, agentId, userId) {
+    return await WhatsAppSession.assignAgent(sessionId, agentId, userId);
+  }
+
+  // Fechar sessão
+  async closeSession(sessionId, userId) {
+    return await WhatsAppSession.close(sessionId, userId);
+  }
+}
+
+module.exports = new WhatsAppService();
+```
+
+5. SISTEMA DE NOTIFICAÇÕES EM TEMPO REAL
+========================================
+
+5.1 IMPLEMENTAR NOTIFICATION SERVICE (server/services/notificationService.js)
+
+CÓDIGO OBRIGATÓRIO:
+```javascript
+// server/services/notificationService.js - CRIAR ARQUIVO NOVO
+const nodemailer = require('nodemailer');
+
+class NotificationService {
+  constructor() {
+    // Configurar transporter de email
+    this.emailTransporter = nodemailer.createTransporter({
+      host: process.env.SMTP_HOST,
+      port: process.env.SMTP_PORT,
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
+      }
+    });
+  }
+
+  // Enviar notificação por email
+  async sendEmail(to, subject, html) {
+    try {
+      await this.emailTransporter.sendMail({
+        from: process.env.SMTP_FROM,
+        to: to,
+        subject: subject,
+        html: html
+      });
+      console.log(`Email enviado para ${to}`);
+    } catch (error) {
+      console.error('Erro ao enviar email:', error);
+    }
+  }
+
+  // Notificar nova mensagem
+  async notifyNewMessage(userId, conversationId, message) {
+    const io = require('../app').get('io');
+    if (io) {
+      io.to(`user-${userId}`).emit('notification', {
+        type: 'new_message',
+        title: 'Nova Mensagem',
+        message: 'Você recebeu uma nova mensagem',
+        data: { conversationId, message }
+      });
+    }
+  }
+
+  // Notificar erro de sistema
+  async notifySystemError(userId, error) {
+    const io = require('../app').get('io');
+    if (io) {
+      io.to(`user-${userId}`).emit('notification', {
+        type: 'error',
+        title: 'Erro do Sistema',
+        message: error.message,
+        data: { error: error.stack }
+      });
+    }
+  }
+
+  // Notificar limite de uso
+  async notifyUsageLimit(userId, usage) {
+    const io = require('../app').get('io');
+    if (io) {
+      io.to(`user-${userId}`).emit('notification', {
+        type: 'warning',
+        title: 'Limite de Uso',
+        message: `Você atingiu ${usage.percentage}% do seu limite mensal`,
+        data: usage
+      });
+    }
+  }
+}
+
+module.exports = new NotificationService();
+```
+
+6. SISTEMA DE PAGAMENTOS STRIPE
+===============================
+
+6.1 IMPLEMENTAR PAYMENT CONTROLLER (server/controllers/paymentController.js)
+
+CÓDIGO OBRIGATÓRIO:
+```javascript
+// server/controllers/paymentController.js - CRIAR ARQUIVO NOVO
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const User = require('../models/User');
+
+const paymentController = {
+  // Criar assinatura
+  async createSubscription(req, res) {
+    try {
+      const { planId, paymentMethodId } = req.body;
+      const userId = req.user.id;
+
+      // Buscar usuário
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({ error: 'Usuário não encontrado' });
+      }
+
+      // Criar ou buscar customer no Stripe
+      let customerId = user.stripe_customer_id;
+      if (!customerId) {
+        const customer = await stripe.customers.create({
+          email: user.email,
+          name: user.name,
+          metadata: { userId: userId.toString() }
+        });
+        customerId = customer.id;
+        
+        // Atualizar usuário com customer ID
+        await User.update(userId, { stripe_customer_id: customerId });
+      }
+
+      // Anexar método de pagamento
+      await stripe.paymentMethods.attach(paymentMethodId, {
+        customer: customerId
+      });
+
+      // Criar assinatura
+      const subscription = await stripe.subscriptions.create({
+        customer: customerId,
+        items: [{ price: planId }],
+        default_payment_method: paymentMethodId,
+        expand: ['latest_invoice.payment_intent']
+      });
+
+      // Atualizar usuário com dados da assinatura
+      await User.update(userId, {
+        subscription_id: subscription.id,
+        subscription_status: subscription.status,
+        plan_id: planId,
+        last_payment_date: new Date()
+      });
+
+      res.json({ subscription });
+    } catch (error) {
+      console.error('Erro ao criar assinatura:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // Cancelar assinatura
+  async cancelSubscription(req, res) {
+    try {
+      const userId = req.user.id;
+      const user = await User.findById(userId);
+
+      if (!user.subscription_id) {
+        return res.status(400).json({ error: 'Usuário não possui assinatura ativa' });
+      }
+
+      // Cancelar no Stripe
+      const subscription = await stripe.subscriptions.update(user.subscription_id, {
+        cancel_at_period_end: true
+      });
+
+      // Atualizar usuário
+      await User.update(userId, {
+        subscription_status: 'canceled'
+      });
+
+      res.json({ message: 'Assinatura cancelada com sucesso', subscription });
+    } catch (error) {
+      console.error('Erro ao cancelar assinatura:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // Listar planos
+  async getPlans(req, res) {
+    try {
+      const prices = await stripe.prices.list({
+        active: true,
+        expand: ['data.product']
+      });
+
+      const plans = prices.data.map(price => ({
+        id: price.id,
+        name: price.product.name,
+        description: price.product.description,
+        amount: price.unit_amount,
+        currency: price.currency,
+        interval: price.recurring?.interval,
+        features: price.product.metadata.features ? 
+          JSON.parse(price.product.metadata.features) : []
+      }));
+
+      res.json({ plans });
+    } catch (error) {
+      console.error('Erro ao buscar planos:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // Webhook do Stripe
+  async handleWebhook(req, res) {
+    try {
+      const sig = req.headers['stripe-signature'];
+      const event = stripe.webhooks.constructEvent(
+        req.body,
+        sig,
+        process.env.STRIPE_WEBHOOK_SECRET
+      );
+
+      switch (event.type) {
+        case 'invoice.payment_succeeded':
+          await this.handlePaymentSucceeded(event.data.object);
+          break;
+        case 'invoice.payment_failed':
+          await this.handlePaymentFailed(event.data.object);
+          break;
+        case 'customer.subscription.deleted':
+          await this.handleSubscriptionDeleted(event.data.object);
+          break;
+      }
+
+      res.json({ received: true });
+    } catch (error) {
+      console.error('Erro no webhook:', error);
+      res.status(400).json({ error: error.message });
+    }
+  },
+
+  async handlePaymentSucceeded(invoice) {
+    const customerId = invoice.customer;
+    const user = await User.findByStripeCustomerId(customerId);
+    
+    if (user) {
+      await User.update(user.id, {
+        subscription_status: 'active',
+        last_payment_date: new Date()
+      });
+    }
+  },
+
+  async handlePaymentFailed(invoice) {
+    const customerId = invoice.customer;
+    const user = await User.findByStripeCustomerId(customerId);
+    
+    if (user) {
+      await User.update(user.id, {
+        subscription_status: 'past_due'
+      });
+    }
+  },
+
+  async handleSubscriptionDeleted(subscription) {
+    const customerId = subscription.customer;
+    const user = await User.findByStripeCustomerId(customerId);
+    
+    if (user) {
+      await User.update(user.id, {
+        subscription_status: 'canceled',
+        subscription_id: null
+      });
+    }
+  }
+};
+
+module.exports = paymentController;
+```
+
+7. SISTEMA DE RELATÓRIOS E ANALYTICS
+====================================
+
+7.1 IMPLEMENTAR REPORTS CONTROLLER (server/controllers/reportsController.js)
+
+CÓDIGO OBRIGATÓRIO:
+```javascript
+// server/controllers/reportsController.js - CRIAR ARQUIVO NOVO
+const PDFDocument = require('pdfkit');
+const ExcelJS = require('exceljs');
+const db = require('../config/database');
+
+const reportsController = {
+  // Gerar relatório de uso
+  async generateUsageReport(req, res) {
+    try {
+      const { startDate, endDate, format = 'json' } = req.query;
+      const userId = req.user.id;
+
+      // Buscar dados de uso
+      const usageData = await this.getUsageData(userId, startDate, endDate);
+
+      switch (format) {
+        case 'pdf':
+          return this.generatePDFReport(res, usageData);
+        case 'excel':
+          return this.generateExcelReport(res, usageData);
+        default:
+          return res.json({ data: usageData });
+      }
+    } catch (error) {
+      console.error('Erro ao gerar relatório:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // Buscar dados de uso
+  async getUsageData(userId, startDate, endDate) {
+    const queries = {
+      totalMessages: `
+        SELECT COUNT(*) as count 
+        FROM messages 
+        WHERE created_at BETWEEN ? AND ?
+      `,
+      messagesByDay: `
+        SELECT DATE(created_at) as date, COUNT(*) as count 
+        FROM messages 
+        WHERE created_at BETWEEN ? AND ?
+        GROUP BY DATE(created_at)
+        ORDER BY date
+      `,
+      conversationStats: `
+        SELECT 
+          COUNT(*) as total_conversations,
+          COUNT(CASE WHEN status = 'active' THEN 1 END) as active_conversations,
+          COUNT(CASE WHEN status = 'closed' THEN 1 END) as closed_conversations
+        FROM conversations 
+        WHERE created_at BETWEEN ? AND ?
+      `,
+      agentUsage: `
+        SELECT 
+          a.name,
+          COUNT(m.id) as message_count,
+          COUNT(DISTINCT c.id) as conversation_count
+        FROM agents a
+        LEFT JOIN conversations c ON a.id = c.agent_id
+        LEFT JOIN messages m ON c.id = m.conversation_id
+        WHERE m.created_at BETWEEN ? AND ?
+        GROUP BY a.id, a.name
+      `
+    };
+
+    const results = {};
+    const params = [startDate, endDate];
+
+    for (const [key, query] of Object.entries(queries)) {
+      results[key] = await db.executeUserQuery(query, params, userId);
+    }
+
+    return results;
+  },
+
+  // Gerar PDF
+  generatePDFReport(res, data) {
+    const doc = new PDFDocument();
+    
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename=relatorio-uso.pdf');
+    
+    doc.pipe(res);
+    
+    // Cabeçalho
+    doc.fontSize(20).text('Relatório de Uso - IA Agents', 50, 50);
+    doc.fontSize(12).text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, 50, 80);
+    
+    // Estatísticas gerais
+    doc.fontSize(16).text('Estatísticas Gerais', 50, 120);
+    doc.fontSize(12);
+    doc.text(`Total de Mensagens: ${data.totalMessages[0]?.count || 0}`, 50, 150);
+    
+    if (data.conversationStats[0]) {
+      const stats = data.conversationStats[0];
+      doc.text(`Total de Conversas: ${stats.total_conversations}`, 50, 170);
+      doc.text(`Conversas Ativas: ${stats.active_conversations}`, 50, 190);
+      doc.text(`Conversas Fechadas: ${stats.closed_conversations}`, 50, 210);
+    }
+    
+    // Uso por agente
+    if (data.agentUsage.length > 0) {
+      doc.fontSize(16).text('Uso por Agente', 50, 250);
+      let y = 280;
+      
+      data.agentUsage.forEach(agent => {
+        doc.fontSize(12).text(
+          `${agent.name}: ${agent.message_count} mensagens, ${agent.conversation_count} conversas`,
+          50, y
+        );
+        y += 20;
+      });
+    }
+    
+    doc.end();
+  },
+
+  // Gerar Excel
+  async generateExcelReport(res, data) {
+    const workbook = new ExcelJS.Workbook();
+    
+    // Planilha de estatísticas gerais
+    const statsSheet = workbook.addWorksheet('Estatísticas Gerais');
+    statsSheet.addRow(['Métrica', 'Valor']);
+    statsSheet.addRow(['Total de Mensagens', data.totalMessages[0]?.count || 0]);
+    
+    if (data.conversationStats[0]) {
+      const stats = data.conversationStats[0];
+      statsSheet.addRow(['Total de Conversas', stats.total_conversations]);
+      statsSheet.addRow(['Conversas Ativas', stats.active_conversations]);
+      statsSheet.addRow(['Conversas Fechadas', stats.closed_conversations]);
+    }
+    
+    // Planilha de mensagens por dia
+    if (data.messagesByDay.length > 0) {
+      const dailySheet = workbook.addWorksheet('Mensagens por Dia');
+      dailySheet.addRow(['Data', 'Quantidade']);
+      
+      data.messagesByDay.forEach(row => {
+        dailySheet.addRow([row.date, row.count]);
+      });
+    }
+    
+    // Planilha de uso por agente
+    if (data.agentUsage.length > 0) {
+      const agentSheet = workbook.addWorksheet('Uso por Agente');
+      agentSheet.addRow(['Agente', 'Mensagens', 'Conversas']);
+      
+      data.agentUsage.forEach(agent => {
+        agentSheet.addRow([agent.name, agent.message_count, agent.conversation_count]);
+      });
+    }
+    
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=relatorio-uso.xlsx');
+    
+    await workbook.xlsx.write(res);
+    res.end();
+  },
+
+  // Métricas em tempo real
+  async getRealTimeMetrics(req, res) {
+    try {
+      const userId = req.user.id;
+      
+      const metrics = {
+        activeConversations: await this.getActiveConversationsCount(userId),
+        todayMessages: await this.getTodayMessagesCount(userId),
+        onlineAgents: await this.getOnlineAgentsCount(userId),
+        systemHealth: await this.getSystemHealth()
+      };
+      
+      res.json({ metrics });
+    } catch (error) {
+      console.error('Erro ao buscar métricas:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  async getActiveConversationsCount(userId) {
+    const result = await db.executeUserQuery(
+      "SELECT COUNT(*) as count FROM conversations WHERE status = 'active'",
+      [],
+      userId
+    );
+    return result[0]?.count || 0;
+  },
+
+  async getTodayMessagesCount(userId) {
+    const result = await db.executeUserQuery(
+      "SELECT COUNT(*) as count FROM messages WHERE DATE(created_at) = CURDATE()",
+      [],
+      userId
+    );
+    return result[0]?.count || 0;
+  },
+
+  async getOnlineAgentsCount(userId) {
+    const result = await db.executeUserQuery(
+      "SELECT COUNT(*) as count FROM agents WHERE status = 'active'",
+      [],
+      userId
+    );
+    return result[0]?.count || 0;
+  },
+
+  async getSystemHealth() {
+    // Verificar saúde do sistema
+    const health = {
+      database: 'healthy',
+      memory: process.memoryUsage(),
+      uptime: process.uptime()
+    };
+    
+    try {
+      await db.testConnection();
+    } catch (error) {
+      health.database = 'unhealthy';
+    }
+    
+    return health;
+  }
+};
+
+module.exports = reportsController;
+```
+
+8. SISTEMA DE BACKUP AUTOMÁTICO
+===============================
+
+8.1 IMPLEMENTAR MAINTENANCE SERVICE (server/services/maintenanceService.js)
+
+CÓDIGO OBRIGATÓRIO:
+```javascript
+// server/services/maintenanceService.js - CRIAR ARQUIVO NOVO
+const fs = require('fs').promises;
+const path = require('path');
+const { exec } = require('child_process');
+const util = require('util');
+const execAsync = util.promisify(exec);
+const cron = require('node-cron');
+
+class MaintenanceService {
+  constructor() {
+    this.backupDir = path.join(__dirname, '../../backups');
+    this.ensureBackupDirectory();
+  }
+
+  async ensureBackupDirectory() {
+    try {
+      await fs.access(this.backupDir);
+    } catch {
+      await fs.mkdir(this.backupDir, { recursive: true });
+    }
+  }
+
+  // Backup do banco de dados
+  async createDatabaseBackup(userId = null) {
+    try {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const dbName = userId ? `ia_agents_user_${userId}` : 'ia_agents_main';
+      const backupFile = path.join(this.backupDir, `${dbName}_${timestamp}.sql`);
+
+      const command = `mysqldump -h ${process.env.DB_HOST} -u ${process.env.DB_USER} -p${process.env.DB_PASSWORD} ${dbName} > "${backupFile}"`;
+      
+      await execAsync(command);
+      
+      console.log(`Backup criado: ${backupFile}`);
+      return backupFile;
+    } catch (error) {
+      console.error('Erro ao criar backup:', error);
+      throw error;
+    }
+  }
+
+  // Limpeza de backups antigos
+  async cleanOldBackups(daysToKeep = 30) {
+    try {
+      const files = await fs.readdir(this.backupDir);
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
+
+      for (const file of files) {
+        if (file.endsWith('.sql')) {
+          const filePath = path.join(this.backupDir, file);
+          const stats = await fs.stat(filePath);
+          
+          if (stats.mtime < cutoffDate) {
+            await fs.unlink(filePath);
+            console.log(`Backup antigo removido: ${file}`);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao limpar backups antigos:', error);
+    }
+  }
+
+  // Limpeza de sessões expiradas
+  async cleanExpiredSessions() {
+    try {
+      const db = require('../config/database');
+      
+      // Limpar sessões WhatsApp inativas há mais de 24 horas
+      await db.executeMainQuery(
+        `UPDATE whatsapp_sessions 
+         SET status = 'expired' 
+         WHERE status = 'active' 
+         AND last_activity < DATE_SUB(NOW(), INTERVAL 24 HOUR)`
+      );
+
+      console.log('Sessões expiradas limpas');
+    } catch (error) {
+      console.error('Erro ao limpar sessões:', error);
+    }
+  }
+
+  // Otimização do banco de dados
+  async optimizeDatabase() {
+    try {
+      const db = require('../config/database');
+      
+      // Otimizar tabelas principais
+      const tables = ['users', 'agents', 'conversations', 'messages', 'whatsapp_sessions'];
+      
+      for (const table of tables) {
+        await db.executeMainQuery(`OPTIMIZE TABLE ${table}`);
+      }
+      
+      console.log('Banco de dados otimizado');
+    } catch (error) {
+      console.error('Erro ao otimizar banco:', error);
+    }
+  }
+
+  // Monitoramento de uso de recursos
+  async monitorResources() {
+    const usage = {
+      memory: process.memoryUsage(),
+      cpu: process.cpuUsage(),
+      uptime: process.uptime()
+    };
+
+    // Log de uso de recursos
+    console.log('Uso de recursos:', {
+      memoryMB: Math.round(usage.memory.heapUsed / 1024 / 1024),
+      uptimeHours: Math.round(usage.uptime / 3600)
+    });
+
+    // Alertar se uso de memória for muito alto
+    const memoryUsageMB = usage.memory.heapUsed / 1024 / 1024;
+    if (memoryUsageMB > 500) {
+      console.warn(`Alto uso de memória: ${memoryUsageMB}MB`);
+    }
+
+    return usage;
+  }
+
+  // Agendar manutenção automática
+  scheduleAutomaticMaintenance() {
+    // Backup diário às 2:00
+    cron.schedule('0 2 * * *', async () => {
+      console.log('Iniciando backup automático...');
+      try {
+        await this.createDatabaseBackup();
+        await this.cleanOldBackups();
+      } catch (error) {
+        console.error('Erro no backup automático:', error);
+      }
+    });
+
+    // Limpeza de sessões a cada 6 horas
+    cron.schedule('0 */6 * * *', async () => {
+      console.log('Limpando sessões expiradas...');
+      await this.cleanExpiredSessions();
+    });
+
+    // Otimização semanal aos domingos às 3:00
+    cron.schedule('0 3 * * 0', async () => {
+      console.log('Otimizando banco de dados...');
+      await this.optimizeDatabase();
+    });
+
+    // Monitoramento de recursos a cada hora
+    cron.schedule('0 * * * *', async () => {
+      await this.monitorResources();
+    });
+
+    console.log('Manutenção automática agendada');
+  }
+
+  // Backup manual
+  async manualBackup(userId = null) {
+    try {
+      const backupFile = await this.createDatabaseBackup(userId);
+      return {
+        success: true,
+        file: backupFile,
+        message: 'Backup criado com sucesso'
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+}
+
+module.exports = new MaintenanceService();
+```
+
+9. VARIÁVEIS DE AMBIENTE OBRIGATÓRIAS
+====================================
+
+9.1 ATUALIZAR ARQUIVO .ENV (server/.env)
+
+CÓDIGO OBRIGATÓRIO - ADICIONAR/ATUALIZAR:
+```env
+# Configurações existentes...
+
+# OpenAI
+OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# Google Gemini
+GEMINI_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# Hugging Face
+HUGGINGFACE_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# WhatsApp Business API
+WHATSAPP_ACCESS_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+WHATSAPP_PHONE_NUMBER_ID=xxxxxxxxxxxxxxx
+WHATSAPP_VERIFY_TOKEN=meu_token_verificacao_whatsapp
+WHATSAPP_WEBHOOK_URL=https://seudominio.com/api/whatsapp/webhook
+
+# Stripe
+STRIPE_SECRET_KEY=sk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+STRIPE_PUBLISHABLE_KEY=pk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+STRIPE_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# Email SMTP
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=seuemail@gmail.com
+SMTP_PASS=suasenhaapp
+SMTP_FROM=seuemail@gmail.com
+
+# Socket.IO
+SOCKET_IO_CORS_ORIGIN=http://localhost:3000
+
+# Backup
+BACKUP_RETENTION_DAYS=30
+
+# Rate Limiting
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=100
+```
+
+10. INSTALAÇÃO DE DEPENDÊNCIAS
+==============================
+
+10.1 INSTALAR DEPENDÊNCIAS NO BACKEND
+
+COMANDOS OBRIGATÓRIOS:
+```bash
+cd server
+npm install openai @google/generative-ai stripe pdfkit exceljs nodemailer node-cron
+```
+            agent.model,
+            messageText,
+            {
+              temperature: agent.temperature,
+              max_tokens: agent.max_tokens,
+              system_prompt: agent.system_prompt
+            }
+          );
+
+          // Enviar resposta via WhatsApp
+          await this.sendMessage(phoneNumber, aiResponse);
+
+          // Salvar resposta no banco
+          await Message.create({
+            conversation_id: conversation.id,
+            sender: 'agent',
+            content: aiResponse,
+            message_type: 'text',
+            status: 'sent'
+          }, session.user_id);
+        }
+
+        // Atualizar última atividade da sessão
+        await WhatsAppSession.updateLastActivity(session.id, session.user_id);
+      }
+    } catch (error) {
+      console.error('Erro ao processar mensagem:', error);
+    }
+  }
+
+  // Enviar mensagem
+  async sendMessage(to, text) {
+    try {
+      const response = await axios.post(
+        `${this.apiUrl}/${this.phoneNumberId}/messages`,
+        {
+          messaging_product: 'whatsapp',
+          to: to,
+          text: { body: text }
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      return response.data;
+    } catch (error) {
+      console.error('Erro ao enviar mensagem WhatsApp:', error.response?.data || error.message);
+      throw error;
+    }
+  }
+
+  // Buscar perfil do contato
+  async getProfile(phoneNumber) {
+    try {
+      const response = await axios.get(
+        `${this.apiUrl}/${phoneNumber}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${this.accessToken}`
+          }
+        }
+      );
+
+      return response.data;
+    } catch (error) {
+      console.error('Erro ao buscar perfil:', error);
+      return null;
+    }
+  }
+
+  // Listar sessões ativas
+  async getActiveSessions(userId) {
+    try {
+      return await WhatsAppSession.findActive(userId);
+    } catch (error) {
+      console.error('Erro ao buscar sessões ativas:', error);
+      return [];
+    }
+  }
+
+  // Atribuir agente a sessão
+  async assignAgent(sessionId, agentId, userId) {
+    try {
+      await WhatsAppSession.assignAgent(sessionId, agentId, userId);
+      return { success: true };
+    } catch (error) {
+      console.error('Erro ao atribuir agente:', error);
+      throw error;
+    }
+  }
+}
+
+module.exports = new WhatsAppService();
+```
+
+4.2 IMPLEMENTAR WHATSAPP CONTROLLER COMPLETO (server/controllers/whatsappController.js)
+
+CÓDIGO OBRIGATÓRIO:
+```javascript
+// server/controllers/whatsappController.js - SUBSTITUIR CONTEÚDO COMPLETO
+const WhatsAppService = require('../services/whatsappService');
+const WhatsAppSession = require('../models/WhatsAppSession');
+
+const whatsappController = {
+  // Verificar webhook
+  verifyWebhook(req, res) {
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
+
+    const result = WhatsAppService.verifyWebhook(mode, token, challenge);
+    
+    if (result) {
+      res.status(200).send(challenge);
+    } else {
+      res.status(403).send('Forbidden');
+    }
+  },
+
+  // Processar webhook
+  async handleWebhook(req, res) {
+    try {
+      await WhatsAppService.handleWebhook(req.body);
+      res.status(200).send('OK');
+    } catch (error) {
+      console.error('Erro no webhook:', error);
+      res.status(500).send('Error');
+    }
+  },
+
+  // Enviar mensagem
+  async sendMessage(req, res) {
+    try {
+      const { to, message } = req.body;
+      
+      if (!to || !message) {
+        return res.status(400).json({ 
+          error: 'Número de telefone e mensagem são obrigatórios' 
+        });
+      }
+
+      const result = await WhatsAppService.sendMessage(to, message);
+      
+      res.json({ success: true, result });
+    } catch (error) {
+      console.error('Erro ao enviar mensagem:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // Listar sessões
+  async getSessions(req, res) {
+    try {
+      const userId = req.user.id;
+      const sessions = await WhatsAppService.getActiveSessions(userId);
+      
+      res.json({ sessions });
+    } catch (error) {
+      console.error('Erro ao buscar sessões:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // Atribuir agente
+  async assignAgent(req, res) {
+    try {
+      const { sessionId, agentId } = req.body;
+      const userId = req.user.id;
+      
+      if (!sessionId || !agentId) {
+        return res.status(400).json({ 
+          error: 'ID da sessão e ID do agente são obrigatórios' 
+        });
+      }
+
+      await WhatsAppService.assignAgent(sessionId, agentId, userId);
+      
+      res.json({ success: true, message: 'Agente atribuído com sucesso' });
+    } catch (error) {
+      console.error('Erro ao atribuir agente:', error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+};
+
+module.exports = whatsappController;
+```
+
+5. SISTEMA DE NOTIFICAÇÕES EM TEMPO REAL
+========================================
+
+5.1 IMPLEMENTAR NOTIFICAÇÕES NO FRONTEND (src/contexts/NotificationContext.tsx)
+
+CÓDIGO OBRIGATÓRIO:
+```typescript
+// src/contexts/NotificationContext.tsx - SUBSTITUIR CONTEÚDO COMPLETO
+import React, { createContext, useContext, useState, useCallback } from 'react';
+
+interface Notification {
+  id: string;
+  type: 'success' | 'error' | 'warning' | 'info';
+  title: string;
+  message: string;
+  duration?: number;
+}
+
+interface NotificationContextType {
+  notifications: Notification[];
+  addNotification: (notification: Omit<Notification, 'id'>) => void;
+  removeNotification: (id: string) => void;
+  clearNotifications: () => void;
+}
+
+const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
+
+export const useNotification = () => {
+  const context = useContext(NotificationContext);
+  if (!context) {
+    throw new Error('useNotification deve ser usado dentro de NotificationProvider');
+  }
+  return context;
+};
+
+export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  const addNotification = useCallback((notification: Omit<Notification, 'id'>) => {
+    const id = Math.random().toString(36).substr(2, 9);
+    const newNotification = { ...notification, id };
+    
+    setNotifications(prev => [...prev, newNotification]);
+
+    // Auto-remover após duração especificada
+    if (notification.duration !== 0) {
+      setTimeout(() => {
+        removeNotification(id);
+      }, notification.duration || 5000);
+    }
+  }, []);
+
+  const removeNotification = useCallback((id: string) => {
+    setNotifications(prev => prev.filter(notification => notification.id !== id));
+  }, []);
+
+  const clearNotifications = useCallback(() => {
+    setNotifications([]);
+  }, []);
+
+  return (
+    <NotificationContext.Provider value={{
+      notifications,
+      addNotification,
+      removeNotification,
+      clearNotifications
+    }}>
+      {children}
+      
+      {/* Renderizar notificações */}
+      <div className="fixed top-4 right-4 z-50 space-y-2">
+        {notifications.map(notification => (
+          <div
+            key={notification.id}
+            className={`p-4 rounded-lg shadow-lg max-w-sm ${
+              notification.type === 'success' ? 'bg-green-500 text-white' :
+              notification.type === 'error' ? 'bg-red-500 text-white' :
+              notification.type === 'warning' ? 'bg-yellow-500 text-white' :
+              'bg-blue-500 text-white'
+            }`}
+          >
+            <div className="flex justify-between items-start">
+              <div>
+                <h4 className="font-semibold">{notification.title}</h4>
+                <p className="text-sm opacity-90">{notification.message}</p>
+              </div>
+              <button
+                onClick={() => removeNotification(notification.id)}
+                className="ml-2 text-white hover:text-gray-200"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </NotificationContext.Provider>
+  );
+};
+```
+
+6. SISTEMA DE PAGAMENTOS - STRIPE INTEGRATION
+=============================================
+
+6.1 IMPLEMENTAR PAYMENT CONTROLLER (server/controllers/paymentController.js)
+
+CÓDIGO OBRIGATÓRIO:
+```javascript
+// server/controllers/paymentController.js - CRIAR ARQUIVO NOVO
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const User = require('../models/User');
+
+const paymentController = {
+  // Criar assinatura
+  async createSubscription(req, res) {
+    try {
+      const { planId, paymentMethodId } = req.body;
+      const userId = req.user.id;
+      
+      // Buscar usuário
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({ error: 'Usuário não encontrado' });
+      }
+
+      // Criar customer no Stripe se não existir
+      let customerId = user.stripe_customer_id;
+      if (!customerId) {
+        const customer = await stripe.customers.create({
+          email: user.email,
+          name: user.name,
+          metadata: { userId: userId.toString() }
+        });
+        customerId = customer.id;
+        
+        // Salvar customer ID no usuário
+        await User.update(userId, { stripe_customer_id: customerId });
+      }
+
+      // Anexar método de pagamento
+      await stripe.paymentMethods.attach(paymentMethodId, {
+        customer: customerId
+      });
+
+      // Criar assinatura
+      const subscription = await stripe.subscriptions.create({
+        customer: customerId,
+        items: [{ price: planId }],
+        default_payment_method: paymentMethodId,
+        expand: ['latest_invoice.payment_intent']
+      });
+
+      // Atualizar plano do usuário
+      await User.update(userId, {
+        subscription_id: subscription.id,
+        subscription_status: subscription.status,
+        plan_id: planId
+      });
+
+      res.json({ subscription });
+    } catch (error) {
+      console.error('Erro ao criar assinatura:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // Webhook do Stripe
+  async handleWebhook(req, res) {
+    try {
+      const sig = req.headers['stripe-signature'];
+      const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+      
+      let event;
+      try {
+        event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+      } catch (err) {
+        console.error('Webhook signature verification failed:', err.message);
+        return res.status(400).send(`Webhook Error: ${err.message}`);
+      }
+
+      // Processar evento
+      switch (event.type) {
+        case 'invoice.payment_succeeded':
+          await this.handlePaymentSucceeded(event.data.object);
+          break;
+        case 'invoice.payment_failed':
+          await this.handlePaymentFailed(event.data.object);
+          break;
+        case 'customer.subscription.deleted':
+          await this.handleSubscriptionDeleted(event.data.object);
+          break;
+        default:
+          console.log(`Evento não tratado: ${event.type}`);
+      }
+
+      res.json({ received: true });
+    } catch (error) {
+      console.error('Erro no webhook:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // Pagamento bem-sucedido
+  async handlePaymentSucceeded(invoice) {
+    try {
+      const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+      const customer = await stripe.customers.retrieve(subscription.customer);
+      const userId = customer.metadata.userId;
+
+      if (userId) {
+        await User.update(userId, {
+          subscription_status: 'active',
+          last_payment_date: new Date()
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao processar pagamento bem-sucedido:', error);
+    }
+  },
+
+  // Pagamento falhou
+  async handlePaymentFailed(invoice) {
+    try {
+      const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+      const customer = await stripe.customers.retrieve(subscription.customer);
+      const userId = customer.metadata.userId;
+
+      if (userId) {
+        await User.update(userId, {
+          subscription_status: 'past_due'
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao processar falha de pagamento:', error);
+    }
+  },
+
+  // Assinatura cancelada
+  async handleSubscriptionDeleted(subscription) {
+    try {
+      const customer = await stripe.customers.retrieve(subscription.customer);
+      const userId = customer.metadata.userId;
+
+      if (userId) {
+        await User.update(userId, {
+          subscription_status: 'canceled',
+          subscription_id: null,
+          plan_id: null
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao processar cancelamento:', error);
+    }
+  },
+
+  // Listar planos
+  async getPlans(req, res) {
+    try {
+      const prices = await stripe.prices.list({
+        active: true,
+        expand: ['data.product']
+      });
+
+      res.json({ plans: prices.data });
+    } catch (error) {
+      console.error('Erro ao buscar planos:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // Cancelar assinatura
+  async cancelSubscription(req, res) {
+    try {
+      const userId = req.user.id;
+      const user = await User.findById(userId);
+      
+      if (!user.subscription_id) {
+        return res.status(400).json({ error: 'Usuário não possui assinatura ativa' });
+      }
+
+      await stripe.subscriptions.del(user.subscription_id);
+      
+      await User.update(userId, {
+        subscription_status: 'canceled',
+        subscription_id: null,
+        plan_id: null
+      });
+
+      res.json({ success: true, message: 'Assinatura cancelada com sucesso' });
+    } catch (error) {
+      console.error('Erro ao cancelar assinatura:', error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+};
+
+module.exports = paymentController;
+```
+
+7. SISTEMA DE RELATÓRIOS E ANALYTICS
+====================================
+
+7.1 IMPLEMENTAR REPORTS CONTROLLER (server/controllers/reportsController.js)
+
+CÓDIGO OBRIGATÓRIO:
+```javascript
+// server/controllers/reportsController.js - CRIAR ARQUIVO NOVO
+const db = require('../config/database');
+const PDFDocument = require('pdfkit');
+const ExcelJS = require('exceljs');
+
+const reportsController = {
+  // Gerar relatório de uso
+  async generateUsageReport(req, res) {
+    try {
+      const { startDate, endDate, format = 'json' } = req.query;
+      const userId = req.user.id;
+
+      // Buscar dados de uso
+      const conversationsData = await db.executeUserQuery(
+        `SELECT 
+           DATE(created_at) as date,
+           COUNT(*) as total_conversations,
+           COUNT(CASE WHEN status = 'resolved' THEN 1 END) as resolved_conversations
+         FROM conversations 
+         WHERE created_at BETWEEN ? AND ?
+         GROUP BY DATE(created_at)
+         ORDER BY date`,
+        [startDate, endDate],
+        userId
+      );
+
+      const messagesData = await db.executeUserQuery(
+        `SELECT 
+           DATE(created_at) as date,
+           COUNT(*) as total_messages,
+           COUNT(CASE WHEN sender = 'agent' THEN 1 END) as agent_messages,
+           COUNT(CASE WHEN sender = 'user' THEN 1 END) as user_messages
+         FROM messages 
+         WHERE created_at BETWEEN ? AND ?
+         GROUP BY DATE(created_at)
+         ORDER BY date`,
+        [startDate, endDate],
+        userId
+      );
+
+      const agentsData = await db.executeUserQuery(
+        `SELECT 
+           a.name,
+           a.provider,
+           COUNT(c.id) as total_conversations,
+           AVG(CASE WHEN c.resolved_at IS NOT NULL 
+               THEN TIMESTAMPDIFF(MINUTE, c.created_at, c.resolved_at) 
+               END) as avg_resolution_time
+         FROM agents a
+         LEFT JOIN conversations c ON a.id = c.agent_id 
+           AND c.created_at BETWEEN ? AND ?
+         GROUP BY a.id, a.name, a.provider`,
+        [startDate, endDate],
+        userId
+      );
+
+      const reportData = {
+        period: { startDate, endDate },
+        conversations: conversationsData,
+        messages: messagesData,
+        agents: agentsData,
+        summary: {
+          totalConversations: conversationsData.reduce((sum, day) => sum + day.total_conversations, 0),
+          totalMessages: messagesData.reduce((sum, day) => sum + day.total_messages, 0),
+          avgResolutionTime: agentsData.reduce((sum, agent) => sum + (agent.avg_resolution_time || 0), 0) / agentsData.length
+        }
+      };
+
+      // Retornar em formato solicitado
+      switch (format) {
+        case 'pdf':
+          return this.generatePDFReport(res, reportData);
+        case 'excel':
+          return this.generateExcelReport(res, reportData);
+        default:
+          res.json(reportData);
+      }
+    } catch (error) {
+      console.error('Erro ao gerar relatório:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // Gerar PDF
+  generatePDFReport(res, data) {
+    const doc = new PDFDocument();
+    
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename=relatorio-uso.pdf');
+    
+    doc.pipe(res);
+    
+    // Título
+    doc.fontSize(20).text('Relatório de Uso - IA Agents', 50, 50);
+    doc.fontSize(12).text(`Período: ${data.period.startDate} a ${data.period.endDate}`, 50, 80);
+    
+    // Resumo
+    doc.fontSize(16).text('Resumo', 50, 120);
+    doc.fontSize(12)
+       .text(`Total de Conversas: ${data.summary.totalConversations}`, 50, 150)
+       .text(`Total de Mensagens: ${data.summary.totalMessages}`, 50, 170)
+       .text(`Tempo Médio de Resolução: ${data.summary.avgResolutionTime?.toFixed(2) || 0} minutos`, 50, 190);
+    
+    // Agentes
+    doc.fontSize(16).text('Performance por Agente', 50, 230);
+    let yPos = 260;
+    data.agents.forEach(agent => {
+      doc.fontSize(12)
+         .text(`${agent.name} (${agent.provider}): ${agent.total_conversations} conversas`, 50, yPos)
+         .text(`Tempo médio: ${agent.avg_resolution_time?.toFixed(2) || 0} min`, 70, yPos + 15);
+      yPos += 40;
+    });
+    
+    doc.end();
+  },
+
+  // Gerar Excel
+  async generateExcelReport(res, data) {
+    const workbook = new ExcelJS.Workbook();
+    
+    // Aba de resumo
+    const summarySheet = workbook.addWorksheet('Resumo');
+    summarySheet.addRow(['Métrica', 'Valor']);
+    summarySheet.addRow(['Total de Conversas', data.summary.totalConversations]);
+    summarySheet.addRow(['Total de Mensagens', data.summary.totalMessages]);
+    summarySheet.addRow(['Tempo Médio de Resolução (min)', data.summary.avgResolutionTime?.toFixed(2) || 0]);
+    
+    // Aba de conversas
+    const conversationsSheet = workbook.addWorksheet('Conversas por Dia');
+    conversationsSheet.addRow(['Data', 'Total', 'Resolvidas']);
+    data.conversations.forEach(row => {
+      conversationsSheet.addRow([row.date, row.total_conversations, row.resolved_conversations]);
+    });
+    
+    // Aba de agentes
+    const agentsSheet = workbook.addWorksheet('Performance Agentes');
+    agentsSheet.addRow(['Nome', 'Provedor', 'Conversas', 'Tempo Médio (min)']);
+    data.agents.forEach(agent => {
+      agentsSheet.addRow([agent.name, agent.provider, agent.total_conversations, agent.avg_resolution_time?.toFixed(2) || 0]);
+    });
+    
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=relatorio-uso.xlsx');
+    
+    await workbook.xlsx.write(res);
+    res.end();
+  },
+
+  // Métricas em tempo real
+  async getRealTimeMetrics(req, res) {
+    try {
+      const userId = req.user.id;
+      
+      const metrics = await Promise.all([
+        // Conversas ativas
+        db.executeUserQuery(
+          "SELECT COUNT(*) as count FROM conversations WHERE status = 'active'",
+          [],
+          userId
+        ),
+        
+        // Mensagens hoje
+        db.executeUserQuery(
+          "SELECT COUNT(*) as count FROM messages WHERE DATE(created_at) = CURDATE()",
+          [],
+          userId
+        ),
+        
+        // Agentes ativos
+        db.executeUserQuery(
+          "SELECT COUNT(*) as count FROM agents WHERE status = 'active'",
+          [],
+          userId
+        ),
+        
+        // Tempo médio de resposta (últimas 24h)
+        db.executeUserQuery(
+          `SELECT AVG(response_time) as avg_time 
+           FROM messages 
+           WHERE response_time IS NOT NULL 
+             AND created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)`,
+          [],
+          userId
+        )
+      ]);
+      
+      res.json({
+        activeConversations: metrics[0][0]?.count || 0,
+        messagesToday: metrics[1][0]?.count || 0,
+        activeAgents: metrics[2][0]?.count || 0,
+        avgResponseTime: metrics[3][0]?.avg_time || 0
+      });
+    } catch (error) {
+      console.error('Erro ao buscar métricas:', error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+};
+
+module.exports = reportsController;
+```
+
+8. SISTEMA DE BACKUP E MANUTENÇÃO
+=================================
+
+8.1 IMPLEMENTAR MAINTENANCE SERVICE (server/services/maintenanceService.js)
+
+CÓDIGO OBRIGATÓRIO:
+```javascript
+// server/services/maintenanceService.js - CRIAR ARQUIVO NOVO
+const { exec } = require('child_process');
+const fs = require('fs').promises;
+const path = require('path');
+const db = require('../config/database');
+
+class MaintenanceService {
+  constructor() {
+    this.backupDir = path.join(__dirname, '../../backups');
+    this.ensureBackupDir();
+  }
+
+  // Garantir que diretório de backup existe
+  async ensureBackupDir() {
+    try {
+      await fs.access(this.backupDir);
+    } catch {
+      await fs.mkdir(this.backupDir, { recursive: true });
+    }
+  }
+
+  // Criar backup do banco de dados
+  async createBackup() {
+    try {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const backupFile = path.join(this.backupDir, `backup-${timestamp}.sql`);
+      
+      // Backup do banco principal
+      const mainDbName = process.env.DB_DATABASE || 'ai_agents_saas_main';
+      const command = `mysqldump -h ${process.env.DB_HOST} -u ${process.env.DB_USER} -p${process.env.DB_PASSWORD} ${mainDbName} > ${backupFile}`;
+      
+      return new Promise((resolve, reject) => {
+        exec(command, (error, stdout, stderr) => {
+          if (error) {
+            console.error('Erro no backup:', error);
+            reject(error);
+          } else {
+            console.log('Backup criado:', backupFile);
+            resolve(backupFile);
+          }
+        });
+      });
+    } catch (error) {
+      console.error('Erro ao criar backup:', error);
+      throw error;
+    }
+  }
+
+  // Limpeza de logs antigos
+  async cleanupLogs() {
+    try {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - 30); // 30 dias atrás
+      
+      // Limpar logs de auditoria antigos
+      const result = await db.executeMainQuery(
+        'DELETE FROM audit_logs WHERE created_at < ?',
+        [cutoffDate]
+      );
+      
+      console.log(`Removidos ${result.affectedRows} logs antigos`);
+      return result.affectedRows;
+    } catch (error) {
+      console.error('Erro na limpeza de logs:', error);
+      throw error;
+    }
+  }
+
+  // Otimizar tabelas do banco
+  async optimizeTables() {
+    try {
+      const tables = ['users', 'admin_users', 'audit_logs', 'system_settings'];
+      const results = [];
+      
+      for (const table of tables) {
+        try {
+          await db.executeMainQuery(`OPTIMIZE TABLE ${table}`);
+          results.push({ table, status: 'success' });
+        } catch (error) {
+          results.push({ table, status: 'error', error: error.message });
+        }
+      }
+      
+      console.log('Otimização de tabelas concluída:', results);
+      return results;
+    } catch (error) {
+      console.error('Erro na otimização:', error);
+      throw error;
+    }
+  }
+
+  // Verificar saúde do sistema
+  async checkSystemHealth() {
+    const health = {
+      database: false,
+      diskSpace: false,
+      memory: false,
+      timestamp: new Date().toISOString()
+    };
+    
+    try {
+      // Testar conexão com banco
+      await db.testConnection();
+      health.database = true;
+    } catch (error) {
+      console.error('Erro na conexão do banco:', error);
+    }
+    
+    try {
+      // Verificar espaço em disco
+      const stats = await fs.stat(this.backupDir);
+      health.diskSpace = true;
+    } catch (error) {
+      console.error('Erro ao verificar disco:', error);
+    }
+    
+    try {
+      // Verificar uso de memória
+      const memUsage = process.memoryUsage();
+      health.memory = memUsage.heapUsed < (1024 * 1024 * 1024); // < 1GB
+    } catch (error) {
+      console.error('Erro ao verificar memória:', error);
+    }
+    
+    return health;
+  }
+
+  // Agendar manutenção automática
+  scheduleAutomaticMaintenance() {
+    // Backup diário às 2:00 AM
+    setInterval(async () => {
+      const now = new Date();
+      if (now.getHours() === 2 && now.getMinutes() === 0) {
+        try {
+          await this.createBackup();
+          console.log('Backup automático realizado');
+        } catch (error) {
+          console.error('Erro no backup automático:', error);
+        }
+      }
+    }, 60000); // Verificar a cada minuto
+    
+    // Limpeza semanal aos domingos às 3:00 AM
+    setInterval(async () => {
+      const now = new Date();
+      if (now.getDay() === 0 && now.getHours() === 3 && now.getMinutes() === 0) {
+        try {
+          await this.cleanupLogs();
+          await this.optimizeTables();
+          console.log('Manutenção automática realizada');
+        } catch (error) {
+          console.error('Erro na manutenção automática:', error);
+        }
+      }
+    }, 60000);
+  }
+}
+
+module.exports = new MaintenanceService();
+```
+
+9. CONFIGURAÇÕES DE AMBIENTE OBRIGATÓRIAS
+=========================================
+
+9.1 ATUALIZAR ARQUIVO .ENV (server/.env)
+
+CÓDIGO OBRIGATÓRIO:
+```env
+# server/.env - ADICIONAR/ATUALIZAR VARIÁVEIS
+
+# Banco de Dados
+DB_HOST=localhost
+DB_USER=root
+DB_PASSWORD=
+DB_DATABASE=ai_agents_saas_main
+DB_PORT=3306
+
+# JWT
+JWT_SECRET=sua_chave_jwt_super_secreta_aqui
+JWT_REFRESH_SECRET=sua_chave_refresh_jwt_super_secreta_aqui
+
+# Provedores de IA
+OPENAI_API_KEY=sk-sua_chave_openai_aqui
+GEMINI_API_KEY=sua_chave_gemini_aqui
+HUGGINGFACE_TOKEN=sua_chave_huggingface_aqui
+
+# WhatsApp Business API
+WHATSAPP_ACCESS_TOKEN=seu_token_whatsapp_aqui
+WHATSAPP_PHONE_NUMBER_ID=seu_phone_number_id_aqui
+WHATSAPP_VERIFY_TOKEN=seu_verify_token_aqui
+
+# Stripe
+STRIPE_SECRET_KEY=sk_test_sua_chave_stripe_aqui
+STRIPE_WEBHOOK_SECRET=whsec_sua_webhook_secret_aqui
+
+# Email (SMTP)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=seu_email@gmail.com
+SMTP_PASS=sua_senha_app_gmail
+
+# Configurações do Servidor
+PORT=3001
+NODE_ENV=development
+
+# URLs
+FRONTEND_URL=http://localhost:5173
+BACKEND_URL=http://localhost:3001
+```
+
+10. DEPENDÊNCIAS OBRIGATÓRIAS
+=============================
+
+10.1 INSTALAR DEPENDÊNCIAS NO BACKEND
+
+COMMANDOS OBRIGATÓRIOS:
+```

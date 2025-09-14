@@ -1,0 +1,945 @@
+# PROMPT PARA REPLICAÇÃO DO SISTEMA IA-ATT
+
+## VISÃO GERAL DO PROJETO
+
+O IA-ATT é um sistema SaaS completo para criação e gerenciamento de agentes de IA conversacionais, com funcionalidades específicas para barbearias e atendimento ao cliente. O sistema permite criar múltiplos agentes de IA, gerenciar conversas, integrar com diferentes provedores de IA e oferecer um painel administrativo completo.
+
+## ARQUITETURA TÉCNICA
+
+### Frontend (React + TypeScript + Vite)
+- **Framework**: React 18.3.1 com TypeScript
+- **Build Tool**: Vite 5.4.2
+- **Styling**: Tailwind CSS 3.4.1
+- **Roteamento**: React Router DOM 7.8.2
+- **Animações**: Framer Motion 12.23.12
+- **Ícones**: Heroicons 2.2.0 + Lucide React 0.344.0
+- **Gráficos**: Chart.js 4.5.0 + React ChartJS 2
+- **Formulários**: React Hook Form 7.62.0 + Yup 1.7.0
+- **HTTP Client**: Axios 1.12.1
+- **WebSocket**: Socket.IO Client 4.8.1
+
+### Backend (Node.js + Express)
+- **Runtime**: Node.js com ES Modules
+- **Framework**: Express 5.1.0
+- **Banco de Dados**: MySQL 2 (mysql2 3.14.5)
+- **Autenticação**: JWT (jsonwebtoken 9.0.2)
+- **Criptografia**: bcrypt 6.0.0
+- **WebSocket**: Socket.IO 4.8.1
+- **Segurança**: Helmet 8.1.0, CORS 2.8.5
+- **Validação**: Express Validator 7.2.1
+- **Rate Limiting**: Express Rate Limit 8.1.0
+- **Logging**: Morgan 1.10.1 + Winston 3.17.0
+- **File Upload**: Multer 2.0.2
+- **Cron Jobs**: Node Cron 4.2.1
+
+### Integrações de IA
+- **OpenAI**: GPT-4, GPT-3.5-turbo, GPT-4-turbo
+- **Google Gemini**: Gemini-pro, Gemini-1.5-flash
+- **Hugging Face**: DialoGPT, BlenderBot
+
+### Outras Integrações
+- **WhatsApp Business API**: Para atendimento via WhatsApp
+- **Pagamentos**: Stripe 18.5.0, PayPal
+- **2FA**: Speakeasy 2.0.0
+- **QR Code**: qrcode 1.5.4
+- **PDF**: jsPDF 3.0.2, PDFKit 0.17.2
+- **Excel**: ExcelJS 4.4.0, XLSX 0.18.5
+
+## ESTRUTURA DO BANCO DE DADOS
+
+### Configuração Multi-tenant
+- **Banco Principal**: `ai_agents_saas_main` (usuários, autenticação)
+- **Bancos por Usuário**: `ai_agents_saas_user_{userId}` (dados isolados)
+
+### Tabelas do Banco Principal (ai_agents_saas_main)
+
+#### users
+```sql
+CREATE TABLE users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password VARCHAR(255) NOT NULL,
+  role ENUM('admin', 'user', 'barbearia') DEFAULT 'user',
+  is_active BOOLEAN DEFAULT true,
+  email_verified BOOLEAN DEFAULT false,
+  two_factor_enabled BOOLEAN DEFAULT false,
+  two_factor_secret VARCHAR(255),
+  last_login TIMESTAMP NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+```
+
+#### user_sessions
+```sql
+CREATE TABLE user_sessions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  token_hash VARCHAR(255) NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  ip_address VARCHAR(45),
+  user_agent TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+```
+
+#### audit_logs
+```sql
+CREATE TABLE audit_logs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT,
+  action VARCHAR(100) NOT NULL,
+  resource VARCHAR(100),
+  resource_id INT,
+  ip_address VARCHAR(45),
+  user_agent TEXT,
+  details JSON,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+```
+
+### Tabelas Principais (por usuário)
+
+#### agents
+```sql
+CREATE TABLE agents (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  objective TEXT,
+  personality ENUM('formal', 'casual', 'friendly', 'professional') DEFAULT 'professional',
+  ai_provider ENUM('chatgpt', 'gemini', 'huggingface') NOT NULL,
+  model VARCHAR(100) NOT NULL,
+  system_prompt TEXT,
+  temperature DECIMAL(3,2) DEFAULT 0.7,
+  max_tokens INT DEFAULT 1000,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+```
+
+#### conversations
+```sql
+CREATE TABLE conversations (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  agent_id INT,
+  customer_name VARCHAR(255),
+  customer_email VARCHAR(255),
+  customer_phone VARCHAR(20),
+  channel_type ENUM('whatsapp', 'telegram', 'web', 'api', 'chat') DEFAULT 'chat',
+  status ENUM('active', 'resolved', 'pending', 'closed') DEFAULT 'active',
+  priority INT DEFAULT 1,
+  satisfaction_rating DECIMAL(2,1),
+  start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  end_time TIMESTAMP NULL,
+  resolution_time INT,
+  tags JSON,
+  metadata JSON,
+  FOREIGN KEY (agent_id) REFERENCES agents(id)
+);
+```
+
+#### messages
+```sql
+CREATE TABLE messages (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  conversation_id INT NOT NULL,
+  content TEXT NOT NULL,
+  sender ENUM('user', 'agent') NOT NULL,
+  message_type ENUM('text', 'image', 'audio', 'document', 'video') DEFAULT 'text',
+  media_url VARCHAR(500),
+  whatsapp_message_id VARCHAR(100),
+  status ENUM('sent', 'delivered', 'read', 'failed') DEFAULT 'sent',
+  response_time DECIMAL(8,2),
+  metadata JSON,
+  timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id)
+);
+```
+
+#### knowledge_base (RAG)
+```sql
+CREATE TABLE knowledge_base (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  content TEXT NOT NULL,
+  category VARCHAR(100),
+  tags JSON,
+  embedding JSON,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FULLTEXT(title, content)
+);
+```
+
+#### whatsapp_sessions
+```sql
+CREATE TABLE whatsapp_sessions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  phone_number VARCHAR(20) NOT NULL,
+  session_data JSON,
+  is_active BOOLEAN DEFAULT true,
+  last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+#### integrations
+```sql
+CREATE TABLE integrations (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  type ENUM('whatsapp', 'telegram', 'stripe', 'paypal', 'email') NOT NULL,
+  config JSON NOT NULL,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+```
+
+#### agent_analytics
+```sql
+CREATE TABLE agent_analytics (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  agent_id INT NOT NULL,
+  date DATE NOT NULL,
+  total_conversations INT DEFAULT 0,
+  total_messages INT DEFAULT 0,
+  avg_response_time DECIMAL(8,2) DEFAULT 0,
+  satisfaction_score DECIMAL(3,2) DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_agent_date (agent_id, date)
+);
+```
+
+#### agendamentos (específico para barbearia)
+```sql
+CREATE TABLE agendamentos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  cliente VARCHAR(255) NOT NULL,
+  telefone VARCHAR(20),
+  email VARCHAR(255),
+  data DATE NOT NULL,
+  horario TIME NOT NULL,
+  servico VARCHAR(255) NOT NULL,
+  valor DECIMAL(10,2),
+  pago BOOLEAN DEFAULT false,
+  metodo_pagamento ENUM('dinheiro', 'cartao', 'pix', 'transferencia'),
+  observacoes TEXT,
+  status ENUM('agendado', 'confirmado', 'em_andamento', 'concluido', 'cancelado') DEFAULT 'agendado',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+```
+
+#### servicos (específico para barbearia)
+```sql
+CREATE TABLE servicos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL,
+  descricao TEXT,
+  preco DECIMAL(10,2) NOT NULL,
+  duracao INT NOT NULL COMMENT 'Duração em minutos',
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+```
+
+## MÓDULOS E FUNCIONALIDADES
+
+### 1. Sistema de Autenticação
+- **Login/Registro**: JWT com bcrypt
+- **2FA**: Autenticação de dois fatores com QR Code
+- **Auditoria**: Log de todas as ações do usuário
+- **Segurança**: Rate limiting, detecção de intrusão
+- **Roles**: admin, user, barbearia
+
+### 2. Dashboard Principal
+- **Métricas**: Total de agentes, conversas ativas, tempo de resposta
+- **Gráficos**: Conversas diárias, novos agentes, satisfação
+- **Agentes Ativos**: Lista com status em tempo real
+- **Conversas Recentes**: Últimas interações
+
+### 3. Gerenciamento de Agentes
+- **CRUD Completo**: Criar, editar, deletar agentes
+- **Configurações**: Nome, descrição, objetivo, personalidade
+- **IA**: Provedor (OpenAI/Gemini/HuggingFace), modelo, temperatura
+- **Prompt**: System prompt customizável
+- **Status**: Ativar/desativar agentes
+- **Estatísticas**: Conversas, satisfação, tempo de resposta
+
+### 4. Sistema de Chat
+- **Interface**: Chat em tempo real com WebSocket
+- **RAG**: Busca na base de conhecimento
+- **Múltiplos Agentes**: Seleção de agente por conversa
+- **Histórico**: Persistência de mensagens
+- **Tipos de Mídia**: Texto, imagem, áudio, documento
+
+### 5. Módulo Barbearia (Específico)
+- **Agendamentos**: CRUD completo com calendário
+- **Clientes**: Gestão de dados dos clientes
+- **Serviços**: Catálogo com preços
+- **Pagamentos**: Controle financeiro
+- **Chat Integrado**: Agente específico para barbearia
+- **Relatórios**: Faturamento, agendamentos
+
+### 6. Painel Administrativo
+- **Usuários**: Gestão completa de usuários
+- **Sistema**: Métricas de performance
+- **Auditoria**: Logs de segurança
+- **Alertas**: Monitoramento em tempo real
+- **Backup**: Sistema automatizado
+
+### 7. Integrações
+- **WhatsApp Business**: API oficial
+- **Pagamentos**: Stripe, PayPal, PIX
+- **Notificações**: Email, SMS, Push
+- **Analytics**: Métricas avançadas
+- **Backup**: Automático e manual
+
+## CONFIGURAÇÃO DO AMBIENTE
+
+### Variáveis de Ambiente (.env)
+```env
+# Database
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=
+DB_NAME=ai_agents_saas_main
+
+# JWT
+JWT_SECRET=your_jwt_secret_key
+
+# Server
+PORT=3001
+NODE_ENV=development
+
+# AI Providers
+OPENAI_API_KEY=sk-your-openai-key
+GOOGLE_GEMINI_API_KEY=your-gemini-key
+HUGGINGFACE_API_KEY=your-huggingface-key
+
+# WhatsApp
+WHATSAPP_ACCESS_TOKEN=your-whatsapp-token
+WHATSAPP_PHONE_NUMBER_ID=your-phone-id
+WHATSAPP_WEBHOOK_VERIFY_TOKEN=your-verify-token
+
+# Security
+SESSION_SECRET=your-session-secret
+ENCRYPTION_KEY=your-32-char-encryption-key
+
+# Payments
+STRIPE_SECRET_KEY=sk_test_your_stripe_key
+PAYPAL_CLIENT_ID=your-paypal-client-id
+```
+
+## INSTALAÇÃO E CONFIGURAÇÃO
+
+### 1. Pré-requisitos
+- Node.js 18+
+- MySQL 8.0+
+- XAMPP (opcional para desenvolvimento)
+
+### 2. Instalação
+```bash
+# Clone o projeto
+git clone <repository-url>
+cd ia-att
+
+# Instalar dependências
+npm install
+
+# Configurar banco de dados
+npm run setup-db
+
+# Iniciar desenvolvimento
+npm run dev      # Frontend (porta 5173)
+npm run server:dev  # Backend (porta 3001)
+```
+
+### 3. Configuração do Banco
+```bash
+# Executar setup do banco
+node server/setup-database.js
+
+# Criar usuário admin
+node create-admin.js
+
+# Configurar tabelas da barbearia
+node server/setup-barbearia-tables.js
+```
+
+## ESTRUTURA DE ARQUIVOS
+
+```
+ia-att/
+├── src/                    # Frontend React
+│   ├── components/         # Componentes reutilizáveis
+│   ├── pages/             # Páginas principais
+│   ├── contexts/          # Context API
+│   ├── services/          # Serviços (API, IA)
+│   ├── hooks/             # Custom hooks
+│   └── types/             # TypeScript types
+├── server/                # Backend Node.js
+│   ├── controllers/       # Lógica de negócio
+│   ├── models/           # Modelos de dados
+│   ├── routes/           # Rotas da API
+│   ├── middleware/       # Middlewares
+│   ├── services/         # Serviços (IA, integração)
+│   ├── config/           # Configurações
+│   └── handlers/         # WebSocket handlers
+├── public/               # Arquivos estáticos
+└── dist/                 # Build de produção
+```
+
+## FUNCIONALIDADES IMPLEMENTADAS
+
+✅ **Sistema de Autenticação Completo**
+- Login/Registro com JWT
+- 2FA com QR Code
+- Auditoria de ações
+- Rate limiting e segurança
+
+✅ **Gerenciamento de Agentes IA**
+- CRUD completo
+- Múltiplos provedores (OpenAI, Gemini, HuggingFace)
+- Configuração de personalidade e prompts
+- Estatísticas detalhadas
+
+✅ **Sistema de Chat em Tempo Real**
+- WebSocket para comunicação
+- RAG (Retrieval Augmented Generation)
+- Histórico de conversas
+- Múltiplos tipos de mídia
+
+✅ **Módulo Barbearia Especializado**
+- Sistema de agendamentos
+- Gestão de clientes e serviços
+- Controle financeiro
+- Chat integrado específico
+
+✅ **Dashboard e Analytics**
+- Métricas em tempo real
+- Gráficos interativos
+- Relatórios detalhados
+
+✅ **Painel Administrativo**
+- Gestão de usuários
+- Monitoramento do sistema
+- Logs de auditoria
+- Sistema de backup
+
+✅ **Integrações Externas**
+- WhatsApp Business API
+- Sistemas de pagamento
+- Notificações por email
+
+## FUNCIONALIDADES PENDENTES/MELHORIAS
+
+🔄 **Integrações Avançadas**
+- Telegram Bot
+- Instagram Direct
+- Facebook Messenger
+
+🔄 **IA e Machine Learning**
+- Treinamento de modelos customizados
+- Análise de sentimentos
+- Classificação automática de conversas
+
+
+
+🔄 **IA e Machine Learning**
+- Treinamento de modelos customizados
+- Análise de sentimentos
+- Classificação automática de conversas
+- Fine-tuning de modelos
+- Vector embeddings para RAG
+
+🔄 **Escalabilidade**
+- Microserviços
+- Redis para cache
+- Load balancing
+- CDN para assets estáticos
+- Database sharding
+
+🔄 **Funcionalidades Avançadas**
+- Sistema de templates de resposta
+- Agendamento de mensagens
+- Campanhas de marketing automatizadas
+- Relatórios avançados com exportação
+- API pública para integrações
+- Webhooks personalizáveis
+- Multi-idioma (i18n)
+- Tema escuro/claro
+- Mobile app (React Native)
+
+🔄 **Compliance e Governança**
+- LGPD/GDPR compliance
+- Política de retenção de dados
+- Anonização de dados
+- Auditoria avançada
+- Controle de acesso granular (RBAC)
+
+🔄 **DevOps e Infraestrutura**
+- CI/CD pipelines (GitHub Actions/GitLab CI)
+- Containerização completa (Docker + Kubernetes)
+- Infrastructure as Code (Terraform/Pulumi)
+- Monitoramento avançado (Prometheus + Grafana)
+- Logging centralizado (ELK Stack)
+- APM (Application Performance Monitoring)
+- Health checks e readiness probes
+- Auto-scaling horizontal e vertical
+
+🔄 **Qualidade e Testes**
+- Testes unitários (Jest/Vitest)
+- Testes de integração
+- Testes E2E (Playwright/Cypress)
+- Code coverage reports
+- Análise estática de código (ESLint, SonarQube)
+- Testes de performance (K6/Artillery)
+- Testes de segurança (OWASP ZAP)
+
+🔄 **Experiência do Desenvolvedor**
+- Hot reload avançado
+- Debugging remoto
+- Documentação interativa (Storybook)
+- API documentation (Swagger/OpenAPI)
+- Code generation
+- Pre-commit hooks
+- Conventional commits
+
+🔄 **Funcionalidades de Negócio Avançadas**
+- Sistema de assinaturas/planos
+- Marketplace de agentes
+- Sistema de afiliados
+- Gamificação
+- A/B testing framework
+- Feature flags
+- Personalização avançada de UI
+- Workflow automation
+- Integration marketplace
+
+🔄 **Tecnologias Emergentes**
+- Edge computing
+- WebAssembly para processamento pesado
+- GraphQL subscriptions
+- Server-Sent Events (SSE)
+- Progressive Web App (PWA)
+- Web Workers para processamento background
+- IndexedDB para cache offline
+- WebRTC para chamadas de voz/vídeo
+
+🔄 **Data & Analytics Avançados**
+- Data warehouse (BigQuery/Snowflake)
+- ETL/ELT pipelines
+- Real-time streaming (Apache Kafka)
+- Machine Learning pipelines
+- Data lake architecture
+- Business Intelligence dashboards
+- Predictive analytics
+- Customer behavior tracking
+- Churn prediction
+- Revenue forecasting
+- Cohort analysis
+
+🔄 **Segurança Avançada**
+- Zero Trust Architecture
+- OAuth 2.0 / OpenID Connect
+- SAML integration
+- Certificate pinning
+- WAF (Web Application Firewall)
+- DDoS protection
+- Vulnerability scanning
+- Penetration testing
+- Security headers
+- Content Security Policy (CSP)
+- Rate limiting avançado
+- IP whitelisting/blacklisting
+
+🔄 **Performance e Otimização**
+- Database query optimization
+- Connection pooling
+- Lazy loading
+- Code splitting
+- Tree shaking
+- Image optimization
+- Compression (Gzip/Brotli)
+- Service Workers
+- Critical CSS
+- Resource hints (preload, prefetch)
+- Memory leak detection
+- Performance budgets
+
+## PRINCIPAIS ENDPOINTS DA API
+
+### Autenticação
+```
+POST /api/auth/register     # Registro de usuário
+POST /api/auth/login        # Login
+POST /api/auth/logout       # Logout
+POST /api/auth/refresh      # Refresh token
+POST /api/auth/verify-2fa   # Verificar 2FA
+GET  /api/auth/me           # Dados do usuário logado
+```
+
+### Agentes
+```
+GET    /api/agents         # Listar agentes
+POST   /api/agents         # Criar agente
+GET    /api/agents/:id     # Obter agente
+PUT    /api/agents/:id     # Atualizar agente
+DELETE /api/agents/:id     # Deletar agente
+POST   /api/agents/:id/toggle  # Ativar/desativar
+```
+
+### Chat e Conversas
+```
+POST /api/chat/send         # Enviar mensagem
+GET  /api/chat/messages/:conversationId  # Obter mensagens
+POST /api/chat/conversation # Criar conversa
+GET  /api/conversations     # Listar conversas
+PUT  /api/conversations/:id # Atualizar conversa
+```
+
+### WhatsApp
+```
+POST /api/whatsapp/send     # Enviar mensagem WhatsApp
+POST /api/whatsapp/webhook  # Webhook do WhatsApp
+GET  /api/whatsapp/sessions # Listar sessões
+```
+
+### Barbearia
+```
+GET    /api/barbearia/appointments     # Listar agendamentos
+POST   /api/barbearia/appointments     # Criar agendamento
+PUT    /api/barbearia/appointments/:id # Atualizar agendamento
+DELETE /api/barbearia/appointments/:id # Cancelar agendamento
+GET    /api/barbearia/services         # Listar serviços
+POST   /api/barbearia/services         # Criar serviço
+```
+
+### Admin
+```
+GET    /api/admin/users        # Listar usuários
+PUT    /api/admin/users/:id    # Atualizar usuário
+DELETE /api/admin/users/:id    # Deletar usuário
+GET    /api/admin/analytics    # Métricas do sistema
+GET    /api/admin/audit-logs   # Logs de auditoria
+```
+
+## COMANDOS ÚTEIS
+
+```bash
+# Desenvolvimento
+npm run dev          # Frontend
+npm run server:dev   # Backend com nodemon
+
+# Produção
+npm run build        # Build do frontend
+npm run start        # Produção completa
+
+# Banco de dados
+npm run setup-db     # Configurar banco
+
+# Utilitários
+node create-admin.js              # Criar admin
+node check-all-users.js           # Listar usuários
+node server/setup-barbearia-tables.js  # Setup barbearia
+```
+
+## SEGURANÇA
+
+- **Autenticação**: JWT com refresh tokens
+- **Criptografia**: bcrypt para senhas, AES para dados sensíveis
+- **Rate Limiting**: Proteção contra ataques
+- **CORS**: Configurado para domínios específicos
+- **Helmet**: Headers de segurança
+- **Validação**: Sanitização de inputs
+- **Auditoria**: Log de todas as ações
+
+## PERFORMANCE
+
+- **Frontend**: Lazy loading de componentes
+- **Backend**: Connection pooling MySQL
+- **Cache**: Implementação básica (expandir com Redis)
+- **Compressão**: Gzip habilitado
+- **Otimização**: Bundle splitting no Vite
+
+## MONITORAMENTO
+
+- **Logs**: Winston para logging estruturado
+- **Métricas**: Dashboard de sistema
+- **Alertas**: Notificações automáticas
+- **Health Check**: Endpoint `/api/health`
+
+## DEPLOYMENT
+
+### Desenvolvimento Local
+1. XAMPP para MySQL
+2. Node.js 18+
+3. Configurar .env
+4. `npm install && npm run setup-db`
+5. `npm run dev` + `npm run server:dev`
+
+### Produção
+1. VPS/Cloud com Node.js e MySQL
+2. Configurar variáveis de ambiente
+3. `npm run build`
+4. PM2 para gerenciamento de processos
+5. Nginx como proxy reverso
+6. SSL/TLS com Let's Encrypt
+
+### Docker (Opcional)
+```dockerfile
+# Dockerfile
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY . .
+RUN npm run build
+EXPOSE 3001
+CMD ["npm", "start"]
+```
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+services:
+  app:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - DB_HOST=mysql
+    depends_on:
+      - mysql
+      - redis
+  
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: ai_agents_saas_main
+    volumes:
+      - mysql_data:/var/lib/mysql
+  
+  redis:
+    image: redis:alpine
+    volumes:
+      - redis_data:/data
+  
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/ssl
+    depends_on:
+      - app
+
+volumes:
+  mysql_data:
+  redis_data:
+```
+
+### Configuração PM2
+```json
+{
+  "name": "ia-att",
+  "script": "server/app.js",
+  "instances": "max",
+  "exec_mode": "cluster",
+  "env": {
+    "NODE_ENV": "production",
+    "PORT": 3001
+  },
+  "log_file": "./logs/combined.log",
+  "out_file": "./logs/out.log",
+  "error_file": "./logs/error.log",
+  "log_date_format": "YYYY-MM-DD HH:mm Z"
+}
+```
+
+### Nginx Configuration
+```nginx
+server {
+    listen 80;
+    server_name yourdomain.com;
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name yourdomain.com;
+    
+    ssl_certificate /etc/ssl/cert.pem;
+    ssl_certificate_key /etc/ssl/key.pem;
+    
+    location / {
+        root /var/www/html/dist;
+        try_files $uri $uri/ /index.html;
+    }
+    
+    location /api {
+        proxy_pass http://localhost:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+    
+    location /socket.io {
+        proxy_pass http://localhost:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+## TROUBLESHOOTING E PROBLEMAS COMUNS
+
+### Problemas de Instalação
+```bash
+# Erro de permissões no Windows
+npm config set fund false
+npm config set audit-level moderate
+
+# Limpar cache do npm
+npm cache clean --force
+
+# Reinstalar node_modules
+rm -rf node_modules package-lock.json
+npm install
+```
+
+### Problemas de Banco de Dados
+```sql
+-- Verificar conexão MySQL
+SHOW DATABASES;
+
+-- Verificar usuários
+SELECT User, Host FROM mysql.user;
+
+-- Criar usuário se necessário
+CREATE USER 'iaatt'@'localhost' IDENTIFIED BY 'password';
+GRANT ALL PRIVILEGES ON *.* TO 'iaatt'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+### Problemas de API Keys
+- Verificar se as chaves estão corretas no .env
+- Testar conexão com cada provedor de IA
+- Verificar limites de rate limiting
+- Confirmar saldo/créditos nas contas
+
+### Problemas de WebSocket
+- Verificar se a porta 3001 está liberada
+- Confirmar configuração de CORS
+- Testar conexão Socket.IO no navegador
+
+### Logs Importantes
+```bash
+# Logs do servidor
+tail -f server/logs/error.log
+tail -f server/logs/combined.log
+
+# Logs do PM2
+pm2 logs ia-att
+
+# Logs do sistema
+journalctl -u nginx -f
+```
+
+## BACKUP E RECUPERAÇÃO
+
+### Backup Automático
+```bash
+# Script de backup diário
+#!/bin/bash
+DATE=$(date +%Y%m%d_%H%M%S)
+BACKUP_DIR="/backups"
+
+# Backup do banco de dados
+mysqldump -u root -p ai_agents_saas_main > $BACKUP_DIR/db_main_$DATE.sql
+
+# Backup dos bancos de usuários
+for db in $(mysql -u root -p -e "SHOW DATABASES LIKE 'ai_agents_saas_user_%';" | grep ai_agents_saas_user_); do
+    mysqldump -u root -p $db > $BACKUP_DIR/db_${db}_$DATE.sql
+done
+
+# Backup dos arquivos
+tar -czf $BACKUP_DIR/files_$DATE.tar.gz /path/to/ia-att
+
+# Limpar backups antigos (manter 30 dias)
+find $BACKUP_DIR -name "*.sql" -mtime +30 -delete
+find $BACKUP_DIR -name "*.tar.gz" -mtime +30 -delete
+```
+
+### Recuperação
+```bash
+# Restaurar banco principal
+mysql -u root -p ai_agents_saas_main < backup_file.sql
+
+# Restaurar banco de usuário
+mysql -u root -p ai_agents_saas_user_123 < user_backup.sql
+
+# Restaurar arquivos
+tar -xzf files_backup.tar.gz -C /
+```
+
+## MONITORAMENTO E ALERTAS
+
+### Métricas Importantes
+- CPU e memória do servidor
+- Conexões ativas do banco de dados
+- Tempo de resposta das APIs
+- Taxa de erro das requisições
+- Uso de storage
+- Número de usuários ativos
+
+### Alertas Configurados
+- Falha na conexão com banco de dados
+- APIs de IA indisponíveis
+- Uso de CPU > 80%
+- Uso de memória > 85%
+- Disk space < 10%
+- Erro rate > 5%
+
+## CONSIDERAÇÕES FINAIS
+
+Este sistema é uma plataforma SaaS completa e robusta para criação e gerenciamento de agentes de IA conversacionais. A arquitetura modular permite fácil extensão e customização para diferentes casos de uso, como o módulo específico para barbearias já implementado.
+
+O sistema está pronto para produção com todas as funcionalidades de segurança, monitoramento e escalabilidade básicas implementadas. Para crescimento futuro, recomenda-se a implementação de microserviços, cache distribuído e otimizações de performance adicionais.
+
+### Próximos Passos Recomendados
+1. **Implementar Redis** para cache e sessões
+2. **Configurar CDN** para assets estáticos
+3. **Implementar rate limiting** mais granular
+4. **Adicionar testes automatizados** (Jest, Cypress)
+5. **Configurar CI/CD** (GitHub Actions, GitLab CI)
+6. **Implementar monitoramento** (Prometheus, Grafana)
+7. **Adicionar documentação da API** (Swagger/OpenAPI)
+8. **Implementar versionamento da API**
+9. **Configurar ambiente de staging**
+10. **Implementar feature flags**

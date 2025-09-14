@@ -1,0 +1,1279 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel Administrativo - Dinâmica</title>
+    <link rel="stylesheet" href="admin.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+</head>
+<body class="bg-gray-100">
+    <div id="app">
+        <!-- Header -->
+        <header class="bg-white shadow-sm border-b">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between items-center py-6">
+                    <div class="flex items-center">
+                        <h1 class="text-2xl font-bold text-gray-900">Painel Administrativo</h1>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <span class="text-sm text-gray-500" id="admin-name">Admin</span>
+                        <button onclick="logout()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                            Sair
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Login Form (initially hidden) -->
+        <div id="login-form" class="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+            <div class="max-w-md w-full space-y-8">
+                <div>
+                    <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
+                        Acesso Administrativo
+                    </h2>
+                    <p class="mt-2 text-center text-sm text-gray-600">
+                        Apenas para o proprietário do software
+                    </p>
+                </div>
+                <form class="mt-8 space-y-6" onsubmit="adminLogin(event)">
+                    <div class="rounded-md shadow-sm -space-y-px">
+                        <div>
+                            <input id="admin-email" name="email" type="email" required
+                                class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                                placeholder="Email administrativo">
+                        </div>
+                        <div>
+                            <input id="admin-password" name="password" type="password" required
+                                class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                                placeholder="Senha">
+                        </div>
+                    </div>
+                    <div>
+                        <button type="submit"
+                            class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                            Entrar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Dashboard (initially hidden) -->
+        <div id="dashboard" class="hidden">
+            <!-- Navigation Tabs -->
+            <div class="bg-white shadow">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <nav class="flex space-x-8" aria-label="Tabs">
+                        <button onclick="showTab('overview')" id="tab-overview" class="tab-button active border-indigo-500 text-indigo-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                            Visão Geral
+                        </button>
+                        <button onclick="showTab('users')" id="tab-users" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                            Usuários
+                        </button>
+                        <button onclick="showTab('payments')" id="tab-payments" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                            Pagamentos
+                        </button>
+                        <button onclick="showTab('settings')" id="tab-settings" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                            Configurações
+                        </button>
+                        <button onclick="showTab('logs')" id="tab-logs" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                            Logs
+                        </button>
+                        <button onclick="showTab('reports')" id="tab-reports" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                            Relatórios
+                        </button>
+                        <button onclick="showTab('support')" id="tab-support" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                            Suporte
+                        </button>
+                    </nav>
+                </div>
+            </div>
+            
+            <div class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+                <!-- Overview Tab -->
+                <div id="content-overview" class="tab-content">
+                <!-- Stats Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="p-5">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    <div class="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                                        <span class="text-white text-sm font-bold">$</span>
+                                    </div>
+                                </div>
+                                <div class="ml-5 w-0 flex-1">
+                                    <dl>
+                                        <dt class="text-sm font-medium text-gray-500 truncate">Receita Mensal</dt>
+                                        <dd class="text-lg font-medium text-gray-900" id="monthly-revenue">R$ 0,00</dd>
+                                    </dl>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="p-5">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    <div class="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
+                                        <span class="text-white text-sm font-bold">P</span>
+                                    </div>
+                                </div>
+                                <div class="ml-5 w-0 flex-1">
+                                    <dl>
+                                        <dt class="text-sm font-medium text-gray-500 truncate">Planos Ativos</dt>
+                                        <dd class="text-lg font-medium text-gray-900" id="active-plans">-</dd>
+                                    </dl>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="p-5">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    <div class="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                                        <span class="text-white text-sm font-bold">U</span>
+                                    </div>
+                                </div>
+                                <div class="ml-5 w-0 flex-1">
+                                    <dl>
+                                        <dt class="text-sm font-medium text-gray-500 truncate">Total de Usuários</dt>
+                                        <dd class="text-lg font-medium text-gray-900" id="total-users">-</dd>
+                                    </dl>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="p-5">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    <div class="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                                        <span class="text-white text-sm font-bold">A</span>
+                                    </div>
+                                </div>
+                                <div class="ml-5 w-0 flex-1">
+                                    <dl>
+                                        <dt class="text-sm font-medium text-gray-500 truncate">Agentes Ativos</dt>
+                                        <dd class="text-lg font-medium text-gray-900" id="active-agents">-</dd>
+                                    </dl>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="p-5">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    <div class="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center">
+                                        <span class="text-white text-sm font-bold">C</span>
+                                    </div>
+                                </div>
+                                <div class="ml-5 w-0 flex-1">
+                                    <dl>
+                                        <dt class="text-sm font-medium text-gray-500 truncate">Conversas Hoje</dt>
+                                        <dd class="text-lg font-medium text-gray-900" id="conversations-today">-</dd>
+                                    </dl>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="p-5">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    <div class="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center">
+                                        <span class="text-white text-sm font-bold">!</span>
+                                    </div>
+                                </div>
+                                <div class="ml-5 w-0 flex-1">
+                                    <dl>
+                                        <dt class="text-sm font-medium text-gray-500 truncate">Alertas</dt>
+                                        <dd class="text-lg font-medium text-gray-900" id="alerts-count">-</dd>
+                                    </dl>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Performance Metrics -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="p-5">
+                            <h3 class="text-lg font-medium text-gray-900 mb-4">Performance do Sistema</h3>
+                            <div class="space-y-3">
+                                <div class="flex justify-between">
+                                    <span class="text-sm text-gray-500">Tempo de Resposta Médio</span>
+                                    <span class="text-sm font-medium" id="avg-response-time">-</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-sm text-gray-500">Uptime</span>
+                                    <span class="text-sm font-medium text-green-600" id="system-uptime">99.9%</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-sm text-gray-500">CPU Usage</span>
+                                    <span class="text-sm font-medium" id="cpu-usage">-</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="p-5">
+                            <h3 class="text-lg font-medium text-gray-900 mb-4">Métricas de Faturamento</h3>
+                            <div class="space-y-3">
+                                <div class="flex justify-between">
+                                    <span class="text-sm text-gray-500">MRR (Receita Recorrente)</span>
+                                    <span class="text-sm font-medium" id="mrr">R$ 0,00</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-sm text-gray-500">Churn Rate</span>
+                                    <span class="text-sm font-medium" id="churn-rate">0%</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-sm text-gray-500">LTV Médio</span>
+                                    <span class="text-sm font-medium" id="avg-ltv">R$ 0,00</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="p-5">
+                            <h3 class="text-lg font-medium text-gray-900 mb-4">Atividade Recente</h3>
+                            <div class="space-y-3" id="recent-activity">
+                                <div class="text-sm text-gray-500">Carregando...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </div>
+
+                <!-- Users Tab -->
+                <div id="content-users" class="tab-content hidden">
+                    <div class="mb-6">
+                        <div class="flex justify-between items-center">
+                            <h2 class="text-2xl font-bold text-gray-900">Gerenciamento de Usuários</h2>
+                            <button onclick="openUserModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                Novo Usuário
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white shadow overflow-hidden sm:rounded-md">
+                        <div class="px-4 py-5 sm:px-6">
+                            <h3 class="text-lg leading-6 font-medium text-gray-900">Usuários do Sistema</h3>
+                            <p class="mt-1 max-w-2xl text-sm text-gray-500">Lista de todos os usuários cadastrados</p>
+                        </div>
+                        <div class="border-t border-gray-200">
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nome</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Criado em</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="users-table" class="bg-white divide-y divide-gray-200">
+                                        <!-- Users will be loaded here -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Payments Tab -->
+                <div id="content-payments" class="tab-content hidden">
+                    <div class="mb-6">
+                        <h2 class="text-2xl font-bold text-gray-900">Gerenciamento de Planos e Pagamentos</h2>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                        <div class="bg-white shadow rounded-lg p-6">
+                            <h3 class="text-lg font-medium text-gray-900 mb-4">Planos Ativos</h3>
+                            <div id="active-plans-list" class="space-y-3">
+                                <div class="text-sm text-gray-500">Carregando...</div>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-white shadow rounded-lg p-6">
+                            <h3 class="text-lg font-medium text-gray-900 mb-4">Receita Mensal</h3>
+                            <div class="text-3xl font-bold text-green-600" id="monthly-revenue-display">R$ 0,00</div>
+                            <div class="text-sm text-gray-500 mt-2">Últimos 30 dias</div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white shadow overflow-hidden sm:rounded-md">
+                        <div class="px-4 py-5 sm:px-6">
+                            <h3 class="text-lg leading-6 font-medium text-gray-900">Histórico de Pagamentos</h3>
+                        </div>
+                        <div class="border-t border-gray-200">
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usuário</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plano</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valor</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="payments-table" class="bg-white divide-y divide-gray-200">
+                                        <!-- Payments will be loaded here -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Settings Tab -->
+                <div id="content-settings" class="tab-content hidden">
+                    <div class="mb-6">
+                        <h2 class="text-2xl font-bold text-gray-900">Configurações do Sistema</h2>
+                        <p class="text-gray-600">Controle total sobre todas as configurações e parâmetros do sistema</p>
+                    </div>
+                    
+                    <!-- Settings Navigation -->
+                    <div class="mb-6">
+                        <nav class="flex space-x-4" aria-label="Settings tabs">
+                            <button onclick="showSettingsTab('general')" id="settings-tab-general" class="settings-tab-button active bg-blue-100 text-blue-700 px-3 py-2 font-medium text-sm rounded-md">
+                                Geral
+                            </button>
+                            <button onclick="showSettingsTab('integrations')" id="settings-tab-integrations" class="settings-tab-button text-gray-500 hover:text-gray-700 px-3 py-2 font-medium text-sm rounded-md">
+                                Integrações
+                            </button>
+                            <button onclick="showSettingsTab('security')" id="settings-tab-security" class="settings-tab-button text-gray-500 hover:text-gray-700 px-3 py-2 font-medium text-sm rounded-md">
+                                Segurança
+                            </button>
+                            <button onclick="showSettingsTab('limits')" id="settings-tab-limits" class="settings-tab-button text-gray-500 hover:text-gray-700 px-3 py-2 font-medium text-sm rounded-md">
+                                Limites
+                            </button>
+                            <button onclick="showSettingsTab('notifications')" id="settings-tab-notifications" class="settings-tab-button text-gray-500 hover:text-gray-700 px-3 py-2 font-medium text-sm rounded-md">
+                                Notificações
+                            </button>
+                            <button onclick="showSettingsTab('maintenance')" id="settings-tab-maintenance" class="settings-tab-button text-gray-500 hover:text-gray-700 px-3 py-2 font-medium text-sm rounded-md">
+                                Manutenção
+                            </button>
+                        </nav>
+                    </div>
+
+                    <!-- General Settings -->
+                    <div id="settings-content-general" class="settings-content">
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <div class="bg-white shadow rounded-lg p-6">
+                                <h3 class="text-lg font-medium text-gray-900 mb-4">Informações Básicas</h3>
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Nome do Sistema</label>
+                                        <input type="text" id="site_name" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Descrição</label>
+                                        <textarea id="site_description" rows="3" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Fuso Horário</label>
+                                        <select id="timezone" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                            <option value="America/Sao_Paulo">América/São Paulo</option>
+                                            <option value="America/New_York">América/Nova York</option>
+                                            <option value="Europe/London">Europa/Londres</option>
+                                            <option value="Asia/Tokyo">Ásia/Tóquio</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Idioma Padrão</label>
+                                        <select id="language" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                            <option value="pt-BR">Português (Brasil)</option>
+                                            <option value="en-US">English (US)</option>
+                                            <option value="es-ES">Español</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="mt-6">
+                                    <button onclick="saveGeneralSettings()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                        Salvar Configurações Gerais
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-white shadow rounded-lg p-6">
+                                <h3 class="text-lg font-medium text-gray-900 mb-4">Configurações Avançadas</h3>
+                                <div class="space-y-4">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <label class="text-sm font-medium text-gray-700">Modo de Manutenção</label>
+                                            <p class="text-xs text-gray-500">Bloqueia acesso de usuários não-admin</p>
+                                        </div>
+                                        <input type="checkbox" id="maintenance_mode" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                                    </div>
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <label class="text-sm font-medium text-gray-700">Registro de Novos Usuários</label>
+                                            <p class="text-xs text-gray-500">Permitir cadastro público</p>
+                                        </div>
+                                        <input type="checkbox" id="allow_registration" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" checked>
+                                    </div>
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <label class="text-sm font-medium text-gray-700">Verificação de Email</label>
+                                            <p class="text-xs text-gray-500">Obrigar verificação de email</p>
+                                        </div>
+                                        <input type="checkbox" id="require_email_verification" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" checked>
+                                    </div>
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <label class="text-sm font-medium text-gray-700">Analytics</label>
+                                            <p class="text-xs text-gray-500">Coletar dados de uso</p>
+                                        </div>
+                                        <input type="checkbox" id="enable_analytics" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" checked>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Integrations Settings -->
+                    <div id="settings-content-integrations" class="settings-content hidden">
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <div class="bg-white shadow rounded-lg p-6">
+                                <h3 class="text-lg font-medium text-gray-900 mb-4">WhatsApp Business API</h3>
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">URL da API</label>
+                                        <input type="url" id="whatsapp_api_url" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="https://api.whatsapp.com">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Token de Acesso</label>
+                                        <input type="password" id="whatsapp_token" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Phone Number ID</label>
+                                        <input type="text" id="whatsapp_phone_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                    </div>
+                                    <button onclick="testWhatsAppConnection()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                        Testar Conexão
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-white shadow rounded-lg p-6">
+                                <h3 class="text-lg font-medium text-gray-900 mb-4">OpenAI API</h3>
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Chave da API</label>
+                                        <input type="password" id="openai_api_key" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Modelo Padrão</label>
+                                        <select id="openai_default_model" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                                            <option value="gpt-4">GPT-4</option>
+                                            <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Limite de Tokens por Requisição</label>
+                                        <input type="number" id="openai_max_tokens" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" value="1000">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-white shadow rounded-lg p-6">
+                                <h3 class="text-lg font-medium text-gray-900 mb-4">Stripe (Pagamentos)</h3>
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Chave Pública</label>
+                                        <input type="text" id="stripe_public_key" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Chave Secreta</label>
+                                        <input type="password" id="stripe_secret_key" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Webhook Endpoint</label>
+                                        <input type="url" id="stripe_webhook_url" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-white shadow rounded-lg p-6">
+                                <h3 class="text-lg font-medium text-gray-900 mb-4">SMTP (Email)</h3>
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Servidor SMTP</label>
+                                        <input type="text" id="smtp_host" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="smtp.gmail.com">
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-700">Porta</label>
+                                            <input type="number" id="smtp_port" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" value="587">
+                                        </div>
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-700">Segurança</label>
+                                            <select id="smtp_security" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                                <option value="tls">TLS</option>
+                                                <option value="ssl">SSL</option>
+                                                <option value="none">Nenhuma</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Usuário</label>
+                                        <input type="email" id="smtp_user" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Senha</label>
+                                        <input type="password" id="smtp_password" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                    </div>
+                                    <button onclick="testEmailConnection()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                        Testar Email
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-6">
+                            <button onclick="saveIntegrationSettings()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                Salvar Configurações de Integração
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Security Settings -->
+                    <div id="settings-content-security" class="settings-content hidden">
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <div class="bg-white shadow rounded-lg p-6">
+                                <h3 class="text-lg font-medium text-gray-900 mb-4">Autenticação</h3>
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Tempo de Expiração do Token (horas)</label>
+                                        <input type="number" id="jwt_expiration" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" value="24">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Tentativas de Login (antes de bloquear)</label>
+                                        <input type="number" id="max_login_attempts" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" value="5">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Tempo de Bloqueio (minutos)</label>
+                                        <input type="number" id="lockout_duration" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" value="30">
+                                    </div>
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <label class="text-sm font-medium text-gray-700">Autenticação de Dois Fatores</label>
+                                            <p class="text-xs text-gray-500">Obrigar 2FA para todos os usuários</p>
+                                        </div>
+                                        <input type="checkbox" id="require_2fa" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-white shadow rounded-lg p-6">
+                                <h3 class="text-lg font-medium text-gray-900 mb-4">Políticas de Senha</h3>
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Comprimento Mínimo</label>
+                                        <input type="number" id="password_min_length" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" value="8">
+                                    </div>
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <label class="text-sm font-medium text-gray-700">Exigir Maiúsculas</label>
+                                        </div>
+                                        <input type="checkbox" id="password_require_uppercase" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" checked>
+                                    </div>
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <label class="text-sm font-medium text-gray-700">Exigir Números</label>
+                                        </div>
+                                        <input type="checkbox" id="password_require_numbers" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" checked>
+                                    </div>
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <label class="text-sm font-medium text-gray-700">Exigir Símbolos</label>
+                                        </div>
+                                        <input type="checkbox" id="password_require_symbols" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Expiração da Senha (dias)</label>
+                                        <input type="number" id="password_expiry_days" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" value="90">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-6">
+                            <button onclick="saveSecuritySettings()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                Salvar Configurações de Segurança
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Limits Settings -->
+                    <div id="settings-content-limits" class="settings-content hidden">
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <div class="bg-white shadow rounded-lg p-6">
+                                <h3 class="text-lg font-medium text-gray-900 mb-4">Limites por Plano</h3>
+                                <div class="space-y-6">
+                                    <div class="border-b pb-4">
+                                        <h4 class="font-medium text-gray-900 mb-3">Plano Free</h4>
+                                        <div class="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label class="block text-sm text-gray-700">Agentes</label>
+                                                <input type="number" id="free_agents_limit" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" value="2">
+                                            </div>
+                                            <div>
+                                                <label class="block text-sm text-gray-700">Mensagens/mês</label>
+                                                <input type="number" id="free_messages_limit" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" value="1000">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="border-b pb-4">
+                                        <h4 class="font-medium text-gray-900 mb-3">Plano Basic</h4>
+                                        <div class="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label class="block text-sm text-gray-700">Agentes</label>
+                                                <input type="number" id="basic_agents_limit" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" value="5">
+                                            </div>
+                                            <div>
+                                                <label class="block text-sm text-gray-700">Mensagens/mês</label>
+                                                <input type="number" id="basic_messages_limit" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" value="5000">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="border-b pb-4">
+                                        <h4 class="font-medium text-gray-900 mb-3">Plano Premium</h4>
+                                        <div class="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label class="block text-sm text-gray-700">Agentes</label>
+                                                <input type="number" id="premium_agents_limit" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" value="15">
+                                            </div>
+                                            <div>
+                                                <label class="block text-sm text-gray-700">Mensagens/mês</label>
+                                                <input type="number" id="premium_messages_limit" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" value="20000">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-medium text-gray-900 mb-3">Plano Enterprise</h4>
+                                        <div class="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label class="block text-sm text-gray-700">Agentes</label>
+                                                <input type="number" id="enterprise_agents_limit" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" value="-1" placeholder="Ilimitado">
+                                            </div>
+                                            <div>
+                                                <label class="block text-sm text-gray-700">Mensagens/mês</label>
+                                                <input type="number" id="enterprise_messages_limit" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" value="-1" placeholder="Ilimitado">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-white shadow rounded-lg p-6">
+                                <h3 class="text-lg font-medium text-gray-900 mb-4">Limites Técnicos</h3>
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Tamanho Máximo de Upload (MB)</label>
+                                        <input type="number" id="max_upload_size" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" value="10">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Timeout de Requisição (segundos)</label>
+                                        <input type="number" id="request_timeout" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" value="30">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Rate Limit (req/min por usuário)</label>
+                                        <input type="number" id="rate_limit_per_user" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" value="60">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Máximo de Conexões Simultâneas</label>
+                                        <input type="number" id="max_concurrent_connections" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" value="1000">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Retenção de Logs (dias)</label>
+                                        <input type="number" id="log_retention_days" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" value="30">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-6">
+                            <button onclick="saveLimitsSettings()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                Salvar Configurações de Limites
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Notifications Settings -->
+                    <div id="settings-content-notifications" class="settings-content hidden">
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <div class="bg-white shadow rounded-lg p-6">
+                                <h3 class="text-lg font-medium text-gray-900 mb-4">Notificações do Sistema</h3>
+                                <div class="space-y-4">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <label class="text-sm font-medium text-gray-700">Novos Usuários</label>
+                                            <p class="text-xs text-gray-500">Notificar quando novos usuários se cadastram</p>
+                                        </div>
+                                        <input type="checkbox" id="notify_new_users" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" checked>
+                                    </div>
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <label class="text-sm font-medium text-gray-700">Pagamentos</label>
+                                            <p class="text-xs text-gray-500">Notificar sobre pagamentos e falhas</p>
+                                        </div>
+                                        <input type="checkbox" id="notify_payments" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" checked>
+                                    </div>
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <label class="text-sm font-medium text-gray-700">Erros do Sistema</label>
+                                            <p class="text-xs text-gray-500">Notificar sobre erros críticos</p>
+                                        </div>
+                                        <input type="checkbox" id="notify_system_errors" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" checked>
+                                    </div>
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <label class="text-sm font-medium text-gray-700">Uso de Recursos</label>
+                                            <p class="text-xs text-gray-500">Alertas de CPU, memória e disco</p>
+                                        </div>
+                                        <input type="checkbox" id="notify_resource_usage" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" checked>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-white shadow rounded-lg p-6">
+                                <h3 class="text-lg font-medium text-gray-900 mb-4">Canais de Notificação</h3>
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Email do Administrador</label>
+                                        <input type="email" id="admin_notification_email" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="admin@exemplo.com">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Webhook URL</label>
+                                        <input type="url" id="notification_webhook_url" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="https://hooks.slack.com/...">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Telegram Bot Token</label>
+                                        <input type="text" id="telegram_bot_token" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Telegram Chat ID</label>
+                                        <input type="text" id="telegram_chat_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-6">
+                            <button onclick="saveNotificationSettings()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                Salvar Configurações de Notificação
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Maintenance Settings -->
+                    <div id="settings-content-maintenance" class="settings-content hidden">
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <div class="bg-white shadow rounded-lg p-6">
+                                <h3 class="text-lg font-medium text-gray-900 mb-4">Backup e Restauração</h3>
+                                <div class="space-y-4">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <label class="text-sm font-medium text-gray-700">Backup Automático</label>
+                                            <p class="text-xs text-gray-500">Backup diário do banco de dados</p>
+                                        </div>
+                                        <input type="checkbox" id="auto_backup_enabled" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" checked>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Horário do Backup</label>
+                                        <input type="time" id="backup_time" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" value="02:00">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Retenção de Backups (dias)</label>
+                                        <input type="number" id="backup_retention_days" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" value="7">
+                                    </div>
+                                    <div class="space-y-2">
+                                        <button onclick="createManualBackup()" class="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                            Criar Backup Manual
+                                        </button>
+                                        <button onclick="downloadBackup()" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                            Baixar Último Backup
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-white shadow rounded-lg p-6">
+                                <h3 class="text-lg font-medium text-gray-900 mb-4">Limpeza e Otimização</h3>
+                                <div class="space-y-4">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <label class="text-sm font-medium text-gray-700">Limpeza Automática de Logs</label>
+                                            <p class="text-xs text-gray-500">Remove logs antigos automaticamente</p>
+                                        </div>
+                                        <input type="checkbox" id="auto_log_cleanup" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" checked>
+                                    </div>
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <label class="text-sm font-medium text-gray-700">Otimização de Banco</label>
+                                            <p class="text-xs text-gray-500">Otimiza tabelas semanalmente</p>
+                                        </div>
+                                        <input type="checkbox" id="auto_db_optimization" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" checked>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <button onclick="cleanupLogs()" class="w-full bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                            Limpar Logs Antigos
+                                        </button>
+                                        <button onclick="optimizeDatabase()" class="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                            Otimizar Banco de Dados
+                                        </button>
+                                        <button onclick="clearCache()" class="w-full bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                            Limpar Cache
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-6">
+                            <button onclick="saveMaintenanceSettings()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                Salvar Configurações de Manutenção
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Logs Tab -->
+                <div id="content-logs" class="tab-content hidden">
+                    <div class="mb-6">
+                        <h2 class="text-2xl font-bold text-gray-900">Logs e Auditoria</h2>
+                    </div>
+                    
+                    <div class="bg-white shadow overflow-hidden sm:rounded-md">
+                        <div class="px-4 py-5 sm:px-6">
+                            <h3 class="text-lg leading-6 font-medium text-gray-900">Eventos do Sistema</h3>
+                            <p class="mt-1 max-w-2xl text-sm text-gray-500">Registro de atividades e eventos críticos</p>
+                        </div>
+                        <div class="border-t border-gray-200">
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timestamp</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usuário</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ação</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Recurso</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IP</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="logs-table" class="bg-white divide-y divide-gray-200">
+                                        <!-- Logs will be loaded here -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Reports Tab -->
+                <div id="content-reports" class="tab-content hidden">
+                    <div class="mb-6">
+                        <h2 class="text-2xl font-bold text-gray-900">Relatórios Avançados</h2>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                        <div class="bg-white shadow rounded-lg p-6">
+                            <h3 class="text-lg font-medium text-gray-900 mb-4">KPIs Principais</h3>
+                            <div class="space-y-4">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-sm text-gray-600">Taxa de Conversão</span>
+                                    <span class="text-lg font-semibold text-green-600">12.5%</span>
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <span class="text-sm text-gray-600">CAC (Custo de Aquisição)</span>
+                                    <span class="text-lg font-semibold">R$ 45,00</span>
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <span class="text-sm text-gray-600">Satisfação do Cliente</span>
+                                    <span class="text-lg font-semibold text-green-600">4.8/5</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-white shadow rounded-lg p-6">
+                            <h3 class="text-lg font-medium text-gray-900 mb-4">Exportar Dados</h3>
+                            <div class="space-y-3">
+                                <button class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                    Exportar Usuários (CSV)
+                                </button>
+                                <button class="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                    Exportar Pagamentos (Excel)
+                                </button>
+                                <button class="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                    Relatório Completo (PDF)
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Support Tab -->
+                <div id="content-support" class="tab-content hidden">
+                    <div class="mb-6">
+                        <h2 class="text-2xl font-bold text-gray-900">Suporte e Chamados</h2>
+                    </div>
+                    
+                    <div class="bg-white shadow overflow-hidden sm:rounded-md">
+                        <div class="px-4 py-5 sm:px-6">
+                            <h3 class="text-lg leading-6 font-medium text-gray-900">Tickets de Suporte</h3>
+                            <p class="mt-1 max-w-2xl text-sm text-gray-500">Gerenciar solicitações de suporte dos usuários</p>
+                        </div>
+                        <div class="border-t border-gray-200">
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usuário</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assunto</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prioridade</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="support-table" class="bg-white divide-y divide-gray-200">
+                                        <!-- Support tickets will be loaded here -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Criar/Editar Usuário -->
+    <div id="userModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden">
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div class="mt-3">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900" id="modalTitle">Criar Novo Usuário</h3>
+                    <button onclick="closeUserModal()" class="text-gray-400 hover:text-gray-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                <form id="userForm" onsubmit="submitUserForm(event)">
+                    <input type="hidden" id="userId" name="userId">
+                    <div class="mb-4">
+                        <label for="userName" class="block text-sm font-medium text-gray-700 mb-2">Nome Completo</label>
+                        <input type="text" id="userName" name="name" required 
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <div class="mb-4">
+                        <label for="userEmail" class="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                        <input type="email" id="userEmail" name="email" required 
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <div class="mb-4">
+                        <label for="userPassword" class="block text-sm font-medium text-gray-700 mb-2">Senha</label>
+                        <input type="password" id="userPassword" name="password" 
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <p class="text-xs text-gray-500 mt-1">Deixe em branco para manter a senha atual (apenas edição)</p>
+                    </div>
+                    <div class="mb-4">
+                        <label for="userRole" class="block text-sm font-medium text-gray-700 mb-2">Tipo de Usuário</label>
+                        <select id="userRole" name="role" required 
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <option value="user">Cliente</option>
+                            <option value="admin">Administrador</option>
+                        </select>
+                    </div>
+                    <div class="mb-4">
+                        <label for="userPlan" class="block text-sm font-medium text-gray-700 mb-2">Plano</label>
+                        <select id="userPlan" name="plan" 
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <option value="free">Gratuito</option>
+                            <option value="basic">Básico</option>
+                            <option value="premium">Premium</option>
+                            <option value="enterprise">Enterprise</option>
+                        </select>
+                    </div>
+                    <div class="flex justify-end space-x-3">
+                        <button type="button" onclick="closeUserModal()" 
+                                class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300">
+                            Cancelar
+                        </button>
+                        <button type="submit" 
+                                class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
+                            Salvar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Confirmação -->
+    <div id="confirmModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden">
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div class="mt-3 text-center">
+                <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
+                    <svg class="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-medium text-gray-900 mt-2" id="confirmTitle">Confirmar Ação</h3>
+                <p class="text-sm text-gray-500 mt-2" id="confirmMessage">Tem certeza que deseja realizar esta ação?</p>
+                <div class="flex justify-center space-x-3 mt-4">
+                    <button onclick="closeConfirmModal()" 
+                            class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300">
+                        Cancelar
+                    </button>
+                    <button id="confirmButton" 
+                            class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700">
+                        Confirmar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Detalhes do Usuário -->
+    <div id="userDetailsModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden z-50">
+        <div class="relative top-20 mx-auto p-5 border w-11/12 max-w-6xl shadow-lg rounded-md bg-white">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-gray-900">Detalhes do Usuário</h3>
+                <button onclick="closeUserDetailsModal()" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            
+            <!-- Tabs Navigation -->
+            <div class="border-b border-gray-200 mb-6">
+                <nav class="-mb-px flex space-x-8">
+                    <button onclick="showUserTab('general')" id="tab-general" class="user-tab-btn border-b-2 border-blue-500 text-blue-600 py-2 px-1 text-sm font-medium">
+                        Informações Gerais
+                    </button>
+                    <button onclick="showUserTab('agents')" id="tab-agents" class="user-tab-btn border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 py-2 px-1 text-sm font-medium">
+                        Agentes
+                    </button>
+                    <button onclick="showUserTab('conversations')" id="tab-conversations" class="user-tab-btn border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 py-2 px-1 text-sm font-medium">
+                        Conversas
+                    </button>
+                    <button onclick="showUserTab('settings')" id="tab-settings" class="user-tab-btn border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 py-2 px-1 text-sm font-medium">
+                        Configurações
+                    </button>
+                    <button onclick="showUserTab('activity')" id="tab-activity" class="user-tab-btn border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 py-2 px-1 text-sm font-medium">
+                        Atividade
+                    </button>
+                </nav>
+            </div>
+            
+            <!-- Tab Contents -->
+            <div id="user-tab-general" class="user-tab-content">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="space-y-4">
+                        <h4 class="text-md font-semibold text-gray-900">Dados Pessoais</h4>
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <div class="grid grid-cols-2 gap-4 text-sm">
+                                <div>
+                                    <label class="font-medium text-gray-700">Nome:</label>
+                                    <p id="user-name" class="text-gray-900">-</p>
+                                </div>
+                                <div>
+                                    <label class="font-medium text-gray-700">Email:</label>
+                                    <p id="user-email" class="text-gray-900">-</p>
+                                </div>
+                                <div>
+                                    <label class="font-medium text-gray-700">Telefone:</label>
+                                    <p id="user-phone" class="text-gray-900">-</p>
+                                </div>
+                                <div>
+                                    <label class="font-medium text-gray-700">Status:</label>
+                                    <span id="user-status" class="inline-flex px-2 py-1 text-xs font-semibold rounded-full">-</span>
+                                </div>
+                                <div>
+                                    <label class="font-medium text-gray-700">Plano:</label>
+                                    <p id="user-plan" class="text-gray-900">-</p>
+                                </div>
+                                <div>
+                                    <label class="font-medium text-gray-700">Criado em:</label>
+                                    <p id="user-created" class="text-gray-900">-</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="flex space-x-2">
+                            <button onclick="editUserInfo()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                Editar Informações
+                            </button>
+                            <button onclick="resetUserPassword()" class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                Resetar Senha
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <h4 class="text-md font-semibold text-gray-900">Assinatura</h4>
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span class="font-medium text-gray-700">Status da Assinatura:</span>
+                                    <span id="subscription-status" class="text-gray-900">-</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="font-medium text-gray-700">Expira em:</span>
+                                    <span id="subscription-expires" class="text-gray-900">-</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="font-medium text-gray-700">Valor:</span>
+                                    <span id="subscription-price" class="text-gray-900">-</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="user-tab-agents" class="user-tab-content hidden">
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center">
+                        <h4 class="text-md font-semibold text-gray-900">Agentes WhatsApp</h4>
+                        <button onclick="addNewAgent()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                            Adicionar Agente
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nome</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Última Atividade</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="user-agents-table" class="bg-white divide-y divide-gray-200">
+                                <!-- Agents will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="user-tab-conversations" class="user-tab-content hidden">
+                <div class="space-y-4">
+                    <h4 class="text-md font-semibold text-gray-900">Conversas Recentes</h4>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contato</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Agente</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Última Mensagem</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="user-conversations-table" class="bg-white divide-y divide-gray-200">
+                                <!-- Conversations will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="user-tab-settings" class="user-tab-content hidden">
+                <div class="space-y-6">
+                    <h4 class="text-md font-semibold text-gray-900">Configurações do Usuário</h4>
+                    
+                    <form id="user-settings-form" class="space-y-4">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Limite de Agentes</label>
+                                <input type="number" id="setting-agent-limit" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Limite de Mensagens/Mês</label>
+                                <input type="number" id="setting-message-limit" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Webhook URL</label>
+                                <input type="url" id="setting-webhook-url" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">API Key</label>
+                                <input type="text" id="setting-api-key" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+                        </div>
+                        
+                        <div class="space-y-3">
+                            <label class="flex items-center">
+                                <input type="checkbox" id="setting-auto-reply" class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                                <span class="ml-2 text-sm text-gray-700">Resposta Automática Habilitada</span>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="checkbox" id="setting-notifications" class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                                <span class="ml-2 text-sm text-gray-700">Notificações por Email</span>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="checkbox" id="setting-analytics" class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                                <span class="ml-2 text-sm text-gray-700">Analytics Avançado</span>
+                            </label>
+                        </div>
+                        
+                        <div class="flex space-x-2">
+                            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                Salvar Configurações
+                            </button>
+                            <button type="button" onclick="resetUserSettings()" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                Restaurar Padrões
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <div id="user-tab-activity" class="user-tab-content hidden">
+                <div class="space-y-4">
+                    <h4 class="text-md font-semibold text-gray-900">Atividade Recente</h4>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data/Hora</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ação</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Recurso</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Detalhes</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IP</th>
+                                </tr>
+                            </thead>
+                            <tbody id="user-activity-table" class="bg-white divide-y divide-gray-200">
+                                <!-- Activity will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <script src="./admin.js"></script>
+</body>
+</html>
